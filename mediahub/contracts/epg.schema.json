@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MEDIA•HUB EPG",
+  "type": "object",
+  "required": ["channelId", "programmes"],
+  "properties": {
+    "channelId": { "type": "string", "minLength": 1 },
+    "programmes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "start", "end"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "start": { "type": "string", "format": "date-time" },
+          "end": { "type": "string", "format": "date-time" },
+          "image": { "type": "string", "format": "uri" },
+          "catchup": { "type": "boolean", "default": false }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}
