@@ -3,6 +3,7 @@ package com.nuvio.tv.mediahub.auth
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nuvio.tv.domain.model.AuthState
 import com.nuvio.tv.ui.screens.account.AccountUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -23,20 +24,35 @@ import javax.inject.Inject
  */
 @HiltViewModel
 class MediaHubAccountAuthViewModel @Inject constructor(
-    @ApplicationContext context: Context
+    @ApplicationContext context: Context,
+    private val globalAuthState: MediaHubAuthStateStore
 ) : ViewModel() {
     private val bridge = MediaHubAccountQrBridge(context.applicationContext)
 
-    private val _uiState = MutableStateFlow(AccountUiState())
+    private val _uiState = MutableStateFlow(
+        AccountUiState(authState = globalAuthState.authState.value)
+    )
     val uiState: StateFlow<AccountUiState> = _uiState.asStateFlow()
+    val authState: StateFlow<AuthState> = globalAuthState.authState
 
     val hasActiveSession: Boolean
-        get() = bridge.hasSession()
+        get() = globalAuthState.isAuthenticated
 
     init {
+        globalAuthState.refresh()
+
         viewModelScope.launch {
             bridge.states { _uiState.value }.collect { mapped ->
-                _uiState.value = mapped
+                _uiState.value = mapped.copy(authState = globalAuthState.authState.value)
+                if (mapped.qrLoginStatus?.contains("approved", ignoreCase = true) == true) {
+                    globalAuthState.onSessionApproved()
+                }
+            }
+        }
+
+        viewModelScope.launch {
+            globalAuthState.authState.collect { auth ->
+                _uiState.update { it.copy(authState = auth) }
             }
         }
     }
@@ -47,9 +63,15 @@ class MediaHubAccountAuthViewModel @Inject constructor(
 
     fun pollQrLogin() {
         viewModelScope.launch {
-            bridge.pollNow().onFailure { error ->
-                _uiState.update { it.copy(error = error.message) }
-            }
+            bridge.pollNow()
+                .onSuccess { result ->
+                    if (result is MediaHubPairingPollResult.Approved) {
+                        globalAuthState.onSessionApproved()
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update { it.copy(error = error.message) }
+                }
         }
     }
 
@@ -59,7 +81,8 @@ class MediaHubAccountAuthViewModel @Inject constructor(
 
     fun signOut() {
         bridge.signOut()
-        _uiState.value = AccountUiState()
+        globalAuthState.signOut()
+        _uiState.value = AccountUiState(authState = AuthState.SignedOut)
     }
 
     fun clearError() {
