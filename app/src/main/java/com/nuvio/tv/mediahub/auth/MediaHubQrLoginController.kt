@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.update
 class MediaHubQrLoginController(
     context: Context,
     private val coordinator: MediaHubQrLoginCoordinator = MediaHubQrLoginCoordinator(
+        context = context.applicationContext,
         sessionStore = MediaHubSessionStore(context.applicationContext)
     )
 ) {
@@ -70,6 +71,19 @@ class MediaHubQrLoginController(
                 )
             }
         )
+    }
+
+    suspend fun pollNow(): Result<MediaHubPairingPollResult> {
+        val challenge = _state.value.challenge
+            ?: return Result.failure(IllegalStateException("No active MEDIA•HUB pairing"))
+        return coordinator.poll(challenge)
+    }
+
+    fun currentSession(): MediaHubSessionStore.StoredSession? = coordinator.currentSession()
+
+    fun signOut() {
+        cancel()
+        coordinator.signOut()
     }
 
     fun cancel() {
