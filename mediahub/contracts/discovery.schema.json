@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mediahub.local/contracts/discovery.schema.json",
+  "title": "MEDIA•HUB Discovery Document",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["product", "version", "apiBaseUrl", "capabilities"],
+  "properties": {
+    "product": { "const": "MEDIA•HUB" },
+    "version": { "type": "string", "minLength": 1 },
+    "apiBaseUrl": { "type": "string", "format": "uri" },
+    "publicAuthKey": { "type": "string" },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": { "type": "boolean" },
+      "required": ["accounts", "profiles", "devices", "qrPairing", "sync", "liveTv"]
+    }
+  }
+}

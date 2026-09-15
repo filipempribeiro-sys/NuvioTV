@@ -1,0 +1,15 @@
+{
+  "accounts": true,
+  "profiles": true,
+  "devices": true,
+  "qrPairing": true,
+  "library": true,
+  "watchProgress": true,
+  "favourites": true,
+  "settingsSync": true,
+  "addons": true,
+  "ptHub": true,
+  "liveTv": true,
+  "epg": true,
+  "timeshift": true
+}
