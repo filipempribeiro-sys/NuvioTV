@@ -81,14 +81,34 @@ object ThemeColors {
         backgroundCard = Color(0xFF241A1F)
     )
 
+    // MEDIA•HUB default palette — premium dark base with the
+    // green, red and gold identity carried by the approved brand artwork.
     val White = ThemeColorPalette(
-        secondary = NuvioPrimitives.neutral100,
-        secondaryVariant = NuvioPrimitives.neutral200,
-        onSecondary = NuvioPrimitives.neutral925,
-        onSecondaryVariant = NuvioPrimitives.neutral925,
-        focusRing = NuvioPrimitives.white,
-        focusBackground = Color(0xFF303030),
-        backgroundCard = NuvioPrimitives.neutral850
+        secondary = Color(0xFF0B8F55),
+        secondaryVariant = Color(0xFF087044),
+        onSecondary = Color(0xFFFFFFFF),
+        onSecondaryVariant = Color(0xFFFFFFFF),
+        accentGradient = listOf(
+            Color(0xFF0B8F55),
+            Color(0xFFD2AA45),
+            Color(0xFFC92A35)
+        ),
+        focusRing = Color(0xFFD2AA45),
+        focusRingGradient = listOf(
+            Color(0xFFD2AA45),
+            Color(0xFF0B8F55)
+        ),
+        focusBackground = Color(0xFF17362B),
+        background = Color(0xFF090B0B),
+        backgroundElevated = Color(0xFF111514),
+        backgroundCard = Color(0xFF171C1A),
+        surface = Color(0xFF121715),
+        surfaceVariant = Color(0xFF1D2421),
+        panel = Color(0xFF101412),
+        field = Color(0xFF171D1A),
+        menu = Color(0xFF121715),
+        modal = Color(0xFF111514),
+        playerOverlay = Color(0xD9000000)
     )
 
     fun getColorPalette(
