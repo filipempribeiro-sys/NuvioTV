@@ -1,0 +1,16 @@
+services:
+  mediahub-api:
+    build: ../backend
+    restart: unless-stopped
+    environment:
+      PORT: 8080
+      MEDIAHUB_PUBLIC_BASE_URL: ${MEDIAHUB_PUBLIC_BASE_URL:-http://localhost:8080}
+      MEDIAHUB_PAIRING_TTL_SECONDS: ${MEDIAHUB_PAIRING_TTL_SECONDS:-300}
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
