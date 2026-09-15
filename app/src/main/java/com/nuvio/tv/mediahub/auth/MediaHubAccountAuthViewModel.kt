@@ -43,10 +43,10 @@ class MediaHubAccountAuthViewModel @Inject constructor(
 
         viewModelScope.launch {
             bridge.states { _uiState.value }.collect { mapped ->
-                _uiState.value = mapped.copy(authState = globalAuthState.authState.value)
-                if (mapped.qrLoginStatus?.contains("approved", ignoreCase = true) == true) {
+                if (bridge.hasSession()) {
                     globalAuthState.onSessionApproved()
                 }
+                _uiState.value = mapped.copy(authState = globalAuthState.authState.value)
             }
         }
 
