@@ -1,0 +1,13 @@
+{
+  "discoveryUrl": "https://YOUR-MEDIAHUB-HOST/.well-known/mediahub",
+  "product": "MEDIA•HUB",
+  "ptHub": {
+    "enabled": true,
+    "manifestUrl": "https://YOUR-PT-HUB-HOST/manifest.json"
+  },
+  "liveTv": {
+    "enabled": true,
+    "seekPolicy": "media3-window",
+    "extendedTimeshift": "local-buffer-when-available"
+  }
+}
