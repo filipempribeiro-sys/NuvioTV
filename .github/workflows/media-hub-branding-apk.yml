@@ -20,22 +20,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Neutralize inherited submodule configuration
+      - name: Download branch snapshot without Git checkout
         shell: bash
         run: |
           set -euo pipefail
-          git config --global submodule.recurse false
-          git config --global fetch.recurseSubmodules false
-          git config --global checkout.recurseSubmodules false
-
-      - name: Checkout pt-hub-timeshift without submodules
-        uses: actions/checkout@v5
-        with:
-          ref: pt-hub-timeshift
-          fetch-depth: 1
-          persist-credentials: false
-          submodules: false
-          clean: false
+          curl -fL --retry 3 \
+            "https://github.com/${GITHUB_REPOSITORY}/archive/refs/heads/pt-hub-timeshift.tar.gz" \
+            -o "$RUNNER_TEMP/media-hub-source.tar.gz"
+          tar -xzf "$RUNNER_TEMP/media-hub-source.tar.gz" --strip-components=1 -C "$GITHUB_WORKSPACE"
+          test -f "$GITHUB_WORKSPACE/gradlew"
+          chmod +x "$GITHUB_WORKSPACE/gradlew"
+          echo 'MEDIA-HUB source snapshot extracted without Git/submodule traversal.'
 
       - name: Verify committed MEDIA-HUB identity
         shell: bash
