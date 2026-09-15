@@ -1,0 +1,29 @@
+name: MEDIA-HUB Platform Check
+
+on:
+  push:
+    branches: [media-hub-platform]
+    paths:
+      - 'mediahub/**'
+      - '.github/workflows/media-hub-platform-check.yml'
+  pull_request:
+    paths:
+      - 'mediahub/**'
+
+permissions:
+  contents: read
+
+jobs:
+  backend-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Syntax check
+        working-directory: mediahub/backend
+        run: npm run check
+      - name: QR/discovery smoke test
+        working-directory: mediahub/backend
+        run: npm test
