@@ -3,7 +3,6 @@ package com.nuvio.tv.mediahub.cloud
 import com.nuvio.tv.mediahub.MediaHubRuntimeConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import okhttp3.OkHttpClient
@@ -11,11 +10,21 @@ import okhttp3.Request
 import java.util.concurrent.TimeUnit
 
 @Serializable
+data class MediaHubCapabilities(
+    val accounts: Boolean = false,
+    val profiles: Boolean = false,
+    val devices: Boolean = false,
+    val qrPairing: Boolean = false,
+    val sync: Boolean = false,
+    val liveTv: Boolean = false
+)
+
+@Serializable
 data class MediaHubDiscoveryDocument(
-    @SerialName("apiBaseUrl") val apiBaseUrl: String = "",
-    @SerialName("pairingWebUrl") val pairingWebUrl: String = "",
-    @SerialName("capabilities") val capabilities: List<String> = emptyList(),
-    @SerialName("version") val version: String = "1"
+    val product: String = "MEDIA•HUB",
+    val version: String = "1",
+    val apiBaseUrl: String = "",
+    val capabilities: MediaHubCapabilities = MediaHubCapabilities()
 ) {
     val usable: Boolean
         get() = apiBaseUrl.startsWith("https://") ||
