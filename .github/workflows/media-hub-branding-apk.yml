@@ -93,19 +93,25 @@ jobs:
       - name: Build MEDIA-HUB fullDebug APK
         run: ./gradlew :app:assembleFullDebug --stacktrace
 
-      - name: Locate and rename APK
+      - name: Package universal Android APK
         shell: bash
         run: |
           set -euo pipefail
-          APK="$(find app/build/outputs/apk/full/debug -type f -name '*.apk' | head -n 1)"
-          test -n "$APK"
-          echo "APK generated: $APK"
-          cp "$APK" MEDIA-HUB-0.1.0-alpha-timeshift.apk
+          APK='app/build/outputs/apk/full/debug/app-full-universal-debug.apk'
+          if [ ! -s "$APK" ]; then
+            echo 'Universal APK not found. Generated APKs:'
+            find app/build/outputs/apk/full/debug -type f -name '*.apk' -print
+            exit 1
+          fi
+          echo "Universal APK generated: $APK"
+          unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
+          unzip -l "$APK" | grep -q 'lib/x86_64/'
+          cp "$APK" MEDIA-HUB-0.1.0-alpha-timeshift-universal.apk
 
-      - name: Upload MEDIA-HUB APK
+      - name: Upload MEDIA-HUB universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: MEDIA-HUB-0.1.0-alpha-timeshift
-          path: MEDIA-HUB-0.1.0-alpha-timeshift.apk
+          name: MEDIA-HUB-0.1.0-alpha-timeshift-universal
+          path: MEDIA-HUB-0.1.0-alpha-timeshift-universal.apk
           if-no-files-found: error
           retention-days: 7
