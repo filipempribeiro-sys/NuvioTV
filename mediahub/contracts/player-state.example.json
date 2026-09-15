@@ -1,0 +1,20 @@
+{
+  "contentType": "channel",
+  "isLive": true,
+  "isSeekable": true,
+  "windowStartMs": 0,
+  "windowEndMs": 1800000,
+  "currentPositionMs": 1500000,
+  "liveEdgeOffsetMs": 300000,
+  "actions": {
+    "pause": true,
+    "seekBackward": true,
+    "seekForward": true,
+    "returnToLive": true
+  },
+  "timeshift": {
+    "source": "upstream-window",
+    "bufferDurationMs": 1800000,
+    "extendedLocalBufferAvailable": false
+  }
+}
