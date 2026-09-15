@@ -64,11 +64,7 @@ class MediaHubQrLoginController(
             },
             onFailure = { error ->
                 if (generation != myGeneration) return
-                _state.value = State(
-                    loading = false,
-                    status = Status.Failed,
-                    error = error.message ?: "MEDIA•HUB pairing could not be started"
-                )
+                applyFailure(error)
             }
         )
     }
@@ -76,7 +72,10 @@ class MediaHubQrLoginController(
     suspend fun pollNow(): Result<MediaHubPairingPollResult> {
         val challenge = _state.value.challenge
             ?: return Result.failure(IllegalStateException("No active MEDIA•HUB pairing"))
+
         return coordinator.poll(challenge)
+            .onSuccess { result -> applyPollResult(result, terminateGeneration = true) }
+            .onFailure { error -> applyFailure(error, terminateGeneration = true) }
     }
 
     fun currentSession(): MediaHubSessionStore.StoredSession? = coordinator.currentSession()
@@ -102,52 +101,73 @@ class MediaHubQrLoginController(
 
             coordinator.poll(challenge).fold(
                 onSuccess = { result ->
-                    when (result) {
-                        is MediaHubPairingPollResult.Pending -> {
-                            _state.update {
-                                it.copy(
-                                    loading = false,
-                                    status = Status.Pending,
-                                    error = null
-                                )
-                            }
-                        }
-                        is MediaHubPairingPollResult.Approved -> {
-                            _state.update {
-                                it.copy(
-                                    loading = false,
-                                    status = Status.Approved,
-                                    error = null
-                                )
-                            }
-                            generation++
-                            return
-                        }
-                        MediaHubPairingPollResult.Expired -> {
-                            _state.update {
-                                it.copy(
-                                    loading = false,
-                                    status = Status.Expired,
-                                    error = null
-                                )
-                            }
-                            generation++
-                            return
-                        }
+                    val terminal = applyPollResult(result, terminateGeneration = false)
+                    if (terminal) {
+                        generation++
+                        return
                     }
                 },
                 onFailure = { error ->
-                    _state.update {
-                        it.copy(
-                            loading = false,
-                            status = Status.Failed,
-                            error = error.message ?: "MEDIA•HUB pairing failed"
-                        )
-                    }
+                    applyFailure(error, terminateGeneration = false)
                     generation++
                     return
                 }
             )
         }
+    }
+
+    private fun applyPollResult(
+        result: MediaHubPairingPollResult,
+        terminateGeneration: Boolean
+    ): Boolean {
+        val terminal = when (result) {
+            is MediaHubPairingPollResult.Pending -> {
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        status = Status.Pending,
+                        error = null
+                    )
+                }
+                false
+            }
+            is MediaHubPairingPollResult.Approved -> {
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        status = Status.Approved,
+                        error = null
+                    )
+                }
+                true
+            }
+            MediaHubPairingPollResult.Expired -> {
+                _state.update {
+                    it.copy(
+                        loading = false,
+                        status = Status.Expired,
+                        error = null
+                    )
+                }
+                true
+            }
+        }
+
+        if (terminal && terminateGeneration) generation++
+        return terminal
+    }
+
+    private fun applyFailure(
+        error: Throwable,
+        terminateGeneration: Boolean = false
+    ) {
+        _state.update {
+            it.copy(
+                loading = false,
+                status = Status.Failed,
+                error = error.message ?: "MEDIA•HUB pairing failed"
+            )
+        }
+        if (terminateGeneration) generation++
     }
 }
