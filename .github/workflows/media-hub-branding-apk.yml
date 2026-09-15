@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   rebrand-build:
-    name: Build MEDIA-HUB 0.1.1 alpha APK
+    name: Build MEDIA-HUB 0.1.0 alpha APK
     runs-on: ubuntu-latest
 
     steps:
@@ -37,14 +37,14 @@ jobs:
         run: |
           set -euo pipefail
           grep -q 'applicationId = "com.mediahub.tv"' app/build.gradle.kts
-          grep -q 'versionCode = 2' app/build.gradle.kts
-          grep -q 'versionName = "0.1.1-alpha"' app/build.gradle.kts
+          grep -q 'versionCode = 1' app/build.gradle.kts
+          grep -q 'versionName = "0.1.0-alpha"' app/build.gradle.kts
           grep -q 'MEDIA•HUB' app/src/main/res/values/strings.xml
           grep -q 'MEDIA•HUB default palette' app/src/main/java/com/nuvio/tv/ui/theme/ThemeColors.kt
           test -s assets/brand/media_hub_logo_mark.png
           test -s assets/brand/media_hub_logo_wordmark.png
           test -s assets/brand/media_hub_logo_wordmark_dark.png
-          echo 'MEDIA-HUB 0.1.1 identity verified.'
+          echo 'MEDIA-HUB 0.1.0 identity verified.'
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -93,13 +93,19 @@ jobs:
       - name: Build MEDIA-HUB fullDebug APK
         run: ./gradlew :app:assembleFullDebug --stacktrace
 
-      - name: Rename APK
-        run: cp app/build/outputs/apk/full/debug/app-full-universal-debug.apk MEDIA-HUB-0.1.1-alpha-timeshift.apk
+      - name: Locate and rename APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/full/debug -type f -name '*.apk' | head -n 1)"
+          test -n "$APK"
+          echo "APK generated: $APK"
+          cp "$APK" MEDIA-HUB-0.1.0-alpha-timeshift.apk
 
       - name: Upload MEDIA-HUB APK
         uses: actions/upload-artifact@v4
         with:
-          name: MEDIA-HUB-0.1.1-alpha-timeshift
-          path: MEDIA-HUB-0.1.1-alpha-timeshift.apk
+          name: MEDIA-HUB-0.1.0-alpha-timeshift
+          path: MEDIA-HUB-0.1.0-alpha-timeshift.apk
           if-no-files-found: error
           retention-days: 7
