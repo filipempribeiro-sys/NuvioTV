@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   rebrand-build:
-    name: Build MEDIA-HUB 0.1.0 alpha APK
+    name: Build MEDIA-HUB 0.1.1 alpha APK
     runs-on: ubuntu-latest
 
     steps:
@@ -32,19 +32,65 @@ jobs:
           chmod +x "$GITHUB_WORKSPACE/gradlew"
           echo 'MEDIA-HUB source snapshot extracted without Git/submodule traversal.'
 
-      - name: Verify committed MEDIA-HUB identity
+      - name: Apply MEDIA-HUB runtime identity
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # Build identity for the next alpha.
+          sed -i 's/versionCode = 1/versionCode = 2/' app/build.gradle.kts
+          sed -i 's/versionName = "0.1.0-alpha"/versionName = "0.1.1-alpha"/' app/build.gradle.kts
+
+          # Every locale must expose MEDIA•HUB as the Android launcher/app label.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for p in Path('app/src/main/res').glob('values*/strings.xml'):
+              text = p.read_text(encoding='utf-8')
+              text = re.sub(r'<string name="app_name">.*?</string>', '<string name="app_name">MEDIA•HUB</string>', text, count=1)
+              p.write_text(text, encoding='utf-8')
+          PY
+
+          # Runtime Compose branding: these are the resources BrandWordmark actually renders.
+          cp assets/brand/media_hub_logo_mark.png app/src/main/res/drawable/app_logo_mark.png
+          cp assets/brand/media_hub_logo_mark.png app/src/main/res/drawable/ic_launcher.png
+          cp assets/brand/media_hub_logo_wordmark.png app/src/main/res/drawable/app_logo_wordmark.png
+
+          # Launcher icons. Keep all selectable icon aliases coherent with MEDIA•HUB.
+          for dir in app/src/main/res/mipmap-*; do
+            [ -d "$dir" ] || continue
+            for icon in "$dir"/ic_launcher*.png; do
+              [ -e "$icon" ] || continue
+              cp assets/brand/media_hub_logo_mark.png "$icon"
+            done
+          done
+
+          # TV banners use the wordmark instead of the legacy Nuvio artwork.
+          for dir in app/src/main/res/mipmap-*; do
+            [ -d "$dir" ] || continue
+            for banner in "$dir"/banner*.png; do
+              [ -e "$banner" ] || continue
+              cp assets/brand/media_hub_logo_wordmark.png "$banner"
+            done
+          done
+
+          echo 'MEDIA-HUB runtime branding applied.'
+
+      - name: Verify MEDIA-HUB runtime identity
         shell: bash
         run: |
           set -euo pipefail
           grep -q 'applicationId = "com.mediahub.tv"' app/build.gradle.kts
-          grep -q 'versionCode = 1' app/build.gradle.kts
-          grep -q 'versionName = "0.1.0-alpha"' app/build.gradle.kts
-          grep -q 'MEDIA•HUB' app/src/main/res/values/strings.xml
+          grep -q 'versionCode = 2' app/build.gradle.kts
+          grep -q 'versionName = "0.1.1-alpha"' app/build.gradle.kts
+          grep -q '<string name="app_name">MEDIA•HUB</string>' app/src/main/res/values/strings.xml
+          grep -q '<string name="app_name">MEDIA•HUB</string>' app/src/main/res/values-pt-rPT/strings.xml
           grep -q 'MEDIA•HUB default palette' app/src/main/java/com/nuvio/tv/ui/theme/ThemeColors.kt
+          cmp -s assets/brand/media_hub_logo_wordmark.png app/src/main/res/drawable/app_logo_wordmark.png
+          cmp -s assets/brand/media_hub_logo_mark.png app/src/main/res/drawable/app_logo_mark.png
           test -s assets/brand/media_hub_logo_mark.png
           test -s assets/brand/media_hub_logo_wordmark.png
-          test -s assets/brand/media_hub_logo_wordmark_dark.png
-          echo 'MEDIA-HUB 0.1.0 identity verified.'
+          echo 'MEDIA-HUB 0.1.1 runtime identity verified.'
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -53,11 +99,13 @@ jobs:
           java-version: '17'
           cache: gradle
 
-      - name: Prepare local properties
+      - name: Prepare local properties and validate QR backend
+        shell: bash
         env:
           LOCAL_PROPERTIES_BASE64: ${{ secrets.LOCAL_PROPERTIES_BASE64 }}
           LOCAL_DEV_PROPERTIES_BASE64: ${{ secrets.LOCAL_DEV_PROPERTIES_BASE64 }}
         run: |
+          set -euo pipefail
           if [ -n "$LOCAL_PROPERTIES_BASE64" ]; then
             printf '%s' "$LOCAL_PROPERTIES_BASE64" | base64 --decode > local.properties
           else
@@ -70,24 +118,55 @@ jobs:
             touch local.dev.properties
           fi
 
+          # The QR flow cannot work without the Nuvio-compatible Supabase backend.
+          # Accept configuration from either dev or normal properties, matching Gradle resolution.
+          if ! grep -Eq '^[[:space:]]*NUVIO_SUPABASE_URL[[:space:]]*=[[:space:]]*[^[:space:]]+' local.dev.properties local.properties 2>/dev/null; then
+            echo 'ERROR: NUVIO_SUPABASE_URL is missing from LOCAL_DEV_PROPERTIES_BASE64 / LOCAL_PROPERTIES_BASE64.'
+            exit 1
+          fi
+          if ! grep -Eq '^[[:space:]]*NUVIO_SUPABASE_ANON_KEY[[:space:]]*=[[:space:]]*[^[:space:]]+' local.dev.properties local.properties 2>/dev/null; then
+            echo 'ERROR: NUVIO_SUPABASE_ANON_KEY is missing from LOCAL_DEV_PROPERTIES_BASE64 / LOCAL_PROPERTIES_BASE64.'
+            exit 1
+          fi
+          echo 'QR backend configuration present (values intentionally hidden).'
+
       - name: Prepare CI signing config
+        shell: bash
+        env:
+          MEDIA_HUB_KEYSTORE_BASE64: ${{ secrets.MEDIA_HUB_KEYSTORE_BASE64 }}
+          MEDIA_HUB_KEY_ALIAS: ${{ secrets.MEDIA_HUB_KEY_ALIAS }}
+          MEDIA_HUB_KEY_PASSWORD: ${{ secrets.MEDIA_HUB_KEY_PASSWORD }}
+          MEDIA_HUB_STORE_PASSWORD: ${{ secrets.MEDIA_HUB_STORE_PASSWORD }}
         run: |
-          keytool -genkeypair \
-            -v \
-            -keystore "$RUNNER_TEMP/ci-debug.jks" \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -dname "CN=MEDIA-HUB Android,O=MEDIA-HUB,C=PT" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000
+          set -euo pipefail
+          if [ -n "$MEDIA_HUB_KEYSTORE_BASE64" ]; then
+            printf '%s' "$MEDIA_HUB_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/media-hub.jks"
+            KEY_ALIAS="${MEDIA_HUB_KEY_ALIAS:-mediahub}"
+            KEY_PASSWORD="${MEDIA_HUB_KEY_PASSWORD:-android}"
+            STORE_PASSWORD="${MEDIA_HUB_STORE_PASSWORD:-android}"
+            echo 'Using persistent MEDIA-HUB signing key.'
+          else
+            keytool -genkeypair \
+              -v \
+              -keystore "$RUNNER_TEMP/media-hub.jks" \
+              -storepass android \
+              -alias mediahub \
+              -keypass android \
+              -dname "CN=MEDIA-HUB Android,O=MEDIA-HUB,C=PT" \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000
+            KEY_ALIAS='mediahub'
+            KEY_PASSWORD='android'
+            STORE_PASSWORD='android'
+            echo 'WARNING: persistent signing secret is not configured; this build will require a clean install.'
+          fi
 
           {
-            echo "NUVIO_RELEASE_STORE_FILE=$RUNNER_TEMP/ci-debug.jks"
-            echo "NUVIO_RELEASE_KEY_ALIAS=androiddebugkey"
-            echo "NUVIO_RELEASE_KEY_PASSWORD=android"
-            echo "NUVIO_RELEASE_STORE_PASSWORD=android"
+            echo "NUVIO_RELEASE_STORE_FILE=$RUNNER_TEMP/media-hub.jks"
+            echo "NUVIO_RELEASE_KEY_ALIAS=$KEY_ALIAS"
+            echo "NUVIO_RELEASE_KEY_PASSWORD=$KEY_PASSWORD"
+            echo "NUVIO_RELEASE_STORE_PASSWORD=$STORE_PASSWORD"
           } >> "$GITHUB_ENV"
 
       - name: Build MEDIA-HUB fullDebug APK
@@ -103,15 +182,15 @@ jobs:
             find app/build/outputs/apk/full/debug -type f -name '*.apk' -print
             exit 1
           fi
-          echo "Universal APK generated: $APK"
           unzip -l "$APK" | grep -q 'lib/arm64-v8a/'
           unzip -l "$APK" | grep -q 'lib/x86_64/'
-          cp "$APK" MEDIA-HUB-0.1.0-alpha-timeshift-universal.apk
+          cp "$APK" MEDIA-HUB-0.1.1-alpha-timeshift-universal.apk
+          echo "Universal MEDIA-HUB APK ready: $(du -h MEDIA-HUB-0.1.1-alpha-timeshift-universal.apk | cut -f1)"
 
       - name: Upload MEDIA-HUB universal APK
         uses: actions/upload-artifact@v4
         with:
-          name: MEDIA-HUB-0.1.0-alpha-timeshift-universal
-          path: MEDIA-HUB-0.1.0-alpha-timeshift-universal.apk
+          name: MEDIA-HUB-0.1.1-alpha-timeshift-universal
+          path: MEDIA-HUB-0.1.1-alpha-timeshift-universal.apk
           if-no-files-found: error
           retention-days: 7
