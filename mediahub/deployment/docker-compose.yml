@@ -1,11 +1,32 @@
 services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mediahub
+      POSTGRES_USER: mediahub
+      POSTGRES_PASSWORD: ${MEDIAHUB_DB_PASSWORD:-change-me}
+    volumes:
+      - mediahub-db:/var/lib/postgresql/data
+      - ./schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mediahub -d mediahub"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   mediahub-api:
     build: ../backend
     restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
     environment:
       PORT: 8080
       MEDIAHUB_PUBLIC_BASE_URL: ${MEDIAHUB_PUBLIC_BASE_URL:-http://localhost:8080}
       MEDIAHUB_PAIRING_TTL_SECONDS: ${MEDIAHUB_PAIRING_TTL_SECONDS:-300}
+      MEDIAHUB_ALLOWED_ORIGINS: ${MEDIAHUB_ALLOWED_ORIGINS:-http://localhost:3000}
+      MEDIAHUB_DATABASE_URL: postgresql://mediahub:${MEDIAHUB_DB_PASSWORD:-change-me}@db:5432/mediahub
     ports:
       - "8080:8080"
     healthcheck:
@@ -14,3 +35,6 @@ services:
       timeout: 5s
       retries: 3
       start_period: 5s
+
+volumes:
+  mediahub-db:
