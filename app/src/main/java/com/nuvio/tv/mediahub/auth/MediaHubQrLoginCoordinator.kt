@@ -1,9 +1,9 @@
 package com.nuvio.tv.mediahub.auth
 
+import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import com.nuvio.tv.core.qr.QrCodeGenerator
-import kotlinx.coroutines.delay
 import java.time.OffsetDateTime
 
 /**
@@ -13,7 +13,9 @@ import java.time.OffsetDateTime
  * legacy Nuvio/Supabase account stack is migrated incrementally.
  */
 class MediaHubQrLoginCoordinator(
-    private val pairingClient: MediaHubDevicePairingClient = MediaHubDevicePairingClient()
+    context: Context,
+    private val pairingClient: MediaHubDevicePairingClient = MediaHubDevicePairingClient(),
+    private val sessionStore: MediaHubSessionStore = MediaHubSessionStore(context.applicationContext)
 ) {
     data class Started(
         val challenge: MediaHubPairingChallenge,
@@ -36,10 +38,25 @@ class MediaHubQrLoginCoordinator(
         }
 
     suspend fun poll(challenge: MediaHubPairingChallenge): Result<MediaHubPairingPollResult> =
-        pairingClient.poll(challenge)
+        pairingClient.poll(challenge).onSuccess { result ->
+            if (result is MediaHubPairingPollResult.Approved) {
+                sessionStore.save(
+                    session = result.session,
+                    accountId = result.accountId,
+                    device = result.device
+                )
+            }
+        }
+
+    fun currentSession(): MediaHubSessionStore.StoredSession? =
+        sessionStore.read()?.takeUnless { it.isExpired }
+
+    fun signOut() {
+        sessionStore.clear()
+    }
 
     companion object {
-        fun deviceId(context: android.content.Context): String {
+        fun deviceId(context: Context): String {
             val androidId = Settings.Secure.getString(
                 context.contentResolver,
                 Settings.Secure.ANDROID_ID
