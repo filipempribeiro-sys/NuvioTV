@@ -3,6 +3,7 @@ package com.nuvio.tv.ui.screens.player
 import android.net.Uri
 import android.util.Log
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.exoplayer.SeekParameters
 import com.nuvio.tv.R
 import com.nuvio.tv.core.player.LastPlaybackDiagnostics
@@ -1148,6 +1149,19 @@ fun PlayerRuntimeController.hideControls() {
     _uiState.update { it.copy(showControls = false, showSeekOverlay = false, showMoreDialog = false) }
 }
 
+internal fun PlayerRuntimeController.canSeekCurrentLiveWindow(): Boolean {
+    if (!_playbackTimeline.value.isLive) return true
+    if (isUsingMpvEngine()) return false
+    val player = _exoPlayer ?: return false
+    val timeline = player.currentTimeline
+    if (timeline.isEmpty) return false
+    val mediaIndex = player.currentMediaItemIndex
+    if (mediaIndex < 0 || mediaIndex >= timeline.windowCount) return false
+    val window = Timeline.Window()
+    timeline.getWindow(mediaIndex, window)
+    return window.isLive && window.isSeekable
+}
+
 fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
     if (event != PlayerEvent.OnParentalGuideHide) {
         onUserInteraction()
@@ -1188,15 +1202,15 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             showControlsTemporarily()
         }
         PlayerEvent.OnSeekForward -> {
-            if (_playbackTimeline.value.isLive) return
+            if (_playbackTimeline.value.isLive && !canSeekCurrentLiveWindow()) return
             onEvent(PlayerEvent.OnSeekBy(deltaMs = PlayerScrubRates.STEP_SHORT_MS))
         }
         PlayerEvent.OnSeekBackward -> {
-            if (_playbackTimeline.value.isLive) return
+            if (_playbackTimeline.value.isLive && !canSeekCurrentLiveWindow()) return
             onEvent(PlayerEvent.OnSeekBy(deltaMs = -PlayerScrubRates.STEP_SHORT_MS))
         }
         is PlayerEvent.OnSeekBy -> {
-            if (_playbackTimeline.value.isLive) return
+            if (_playbackTimeline.value.isLive && !canSeekCurrentLiveWindow()) return
             pendingPreviewSeekPosition = null
             val current = currentPlaybackPositionMs() ?: 0L
             val maxDuration = currentPlaybackDurationMs().takeIf { it >= 0 } ?: Long.MAX_VALUE
@@ -1218,7 +1232,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             }
         }
         is PlayerEvent.OnPreviewSeekBy -> {
-            if (_playbackTimeline.value.isLive) return
+            if (_playbackTimeline.value.isLive && !canSeekCurrentLiveWindow()) return
             val maxDuration = currentPlaybackDurationMs().takeIf { it >= 0 } ?: Long.MAX_VALUE
             val basePosition = pendingPreviewSeekPosition ?: currentPlaybackPositionMs()?.coerceAtLeast(0L) ?: 0L
             val target = (basePosition + event.deltaMs)
@@ -1233,7 +1247,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             }
         }
         PlayerEvent.OnCommitPreviewSeek -> {
-            if (_playbackTimeline.value.isLive) return
+            if (_playbackTimeline.value.isLive && !canSeekCurrentLiveWindow()) return
             val target = pendingPreviewSeekPosition
             if (target != null) {
                 seekPlaybackTo(target, SeekParameters.CLOSEST_SYNC)
@@ -1248,7 +1262,7 @@ fun PlayerRuntimeController.onEvent(event: PlayerEvent) {
             }
         }
         is PlayerEvent.OnSeekTo -> {
-            if (_playbackTimeline.value.isLive) return
+            if (_playbackTimeline.value.isLive && !canSeekCurrentLiveWindow()) return
             pendingPreviewSeekPosition = null
             seekPlaybackTo(event.position, SeekParameters.CLOSEST_SYNC)
             updatePlaybackTimeline(currentPosition = event.position)
