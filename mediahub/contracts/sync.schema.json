@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "MEDIA•HUB Sync State",
+  "type": "object",
+  "properties": {
+    "library": { "type": "array" },
+    "watchProgress": { "type": "object" },
+    "favourites": { "type": "array" },
+    "settings": { "type": "object" },
+    "addons": { "type": "array" },
+    "revision": { "type": "integer", "minimum": 0 },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}
