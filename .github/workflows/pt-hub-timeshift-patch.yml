@@ -1,0 +1,72 @@
+name: PT-HUB Timeshift Patch
+
+on:
+  push:
+    branches: [pt-hub-timeshift]
+    paths:
+      - '.github/workflows/pt-hub-timeshift-patch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch-live-seek:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: pt-hub-timeshift
+          fetch-depth: 0
+
+      - name: Enable seek only for seekable Live windows
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('app/src/main/java/com/nuvio/tv/ui/screens/player/PlayerRuntimeControllerPlaybackEvents.kt')
+          s = p.read_text()
+
+          if 'import androidx.media3.common.Timeline' not in s:
+              s = s.replace(
+                  'import androidx.media3.common.Player\n',
+                  'import androidx.media3.common.Player\nimport androidx.media3.common.Timeline\n'
+              )
+
+          anchor = 'fun PlayerRuntimeController.onEvent(event: PlayerEvent) {'
+          helper = '''internal fun PlayerRuntimeController.canSeekCurrentLiveWindow(): Boolean {
+              if (!_playbackTimeline.value.isLive) return true
+              if (isUsingMpvEngine()) return false
+              val player = _exoPlayer ?: return false
+              val timeline = player.currentTimeline
+              if (timeline.isEmpty) return false
+              val mediaIndex = player.currentMediaItemIndex
+              if (mediaIndex < 0 || mediaIndex >= timeline.windowCount) return false
+              val window = Timeline.Window()
+              timeline.getWindow(mediaIndex, window)
+              return window.isLive && window.isSeekable
+          }
+
+          '''
+          if 'canSeekCurrentLiveWindow()' not in s:
+              s = s.replace(anchor, helper + anchor)
+
+          s = s.replace(
+              'if (_playbackTimeline.value.isLive) return',
+              'if (_playbackTimeline.value.isLive && !canSeekCurrentLiveWindow()) return'
+          )
+
+          p.write_text(s)
+
+      - name: Commit prototype
+        run: |
+          if git diff --quiet; then
+            echo 'Timeshift patch already applied.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/src/main/java/com/nuvio/tv/ui/screens/player/PlayerRuntimeControllerPlaybackEvents.kt
+          git commit -m 'feat: allow seek in seekable live windows'
+          git push origin pt-hub-timeshift
