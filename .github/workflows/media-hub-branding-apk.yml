@@ -20,12 +20,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout pt-hub-timeshift
+      - name: Neutralize inherited submodule configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config --global submodule.recurse false
+          git config --global fetch.recurseSubmodules false
+          git config --global checkout.recurseSubmodules false
+
+      - name: Checkout pt-hub-timeshift without submodules
         uses: actions/checkout@v5
         with:
           ref: pt-hub-timeshift
           fetch-depth: 1
           persist-credentials: false
+          submodules: false
+          clean: false
 
       - name: Verify committed MEDIA-HUB identity
         shell: bash
