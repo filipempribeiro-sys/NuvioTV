@@ -2,8 +2,6 @@
 
 package com.nuvio.tv.ui.screens.account
 
-import com.nuvio.tv.ui.theme.NuvioTheme
-
 import android.content.Intent
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -64,10 +62,12 @@ import androidx.tv.material3.Text
 import com.nuvio.tv.BuildConfig
 import com.nuvio.tv.R
 import com.nuvio.tv.domain.model.AuthState
+import com.nuvio.tv.mediahub.auth.MediaHubAccountAuthViewModel
 import com.nuvio.tv.ui.components.BrandWordmark
 import com.nuvio.tv.ui.components.SkeletonBar
 import com.nuvio.tv.ui.components.rememberShimmerBrush
 import com.nuvio.tv.ui.screens.detail.requestFocusAfterFrames
+import com.nuvio.tv.ui.theme.NuvioTheme
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -85,74 +85,64 @@ private val AuthSecondaryButtonBorder = Color.White.copy(alpha = 0.09f)
 fun AuthQrSignInScreen(
     onBackPress: () -> Unit = {},
     onContinue: (() -> Unit)? = null,
-    viewModel: AccountViewModel = hiltViewModel()
+    viewModel: AccountViewModel = hiltViewModel(),
+    mediaHubAuthViewModel: MediaHubAccountAuthViewModel = hiltViewModel()
 ) {
-    val uiState by viewModel.uiState.collectAsState()
-    val fullAccount = uiState.authState as? AuthState.FullAccount
-    val isSignedIn = fullAccount != null
-    val isOnboardingMode = onContinue != null
+    val legacyUiState by viewModel.uiState.collectAsState()
+    val mediaHubUiState by mediaHubAuthViewModel.uiState.collectAsState()
     val useEmailLogin = viewModel.usesEmailPasswordLogin
-    val useQrLogin = !useEmailLogin
-    val isApproved = remember(uiState.qrLoginStatus) {
-        uiState.qrLoginStatus?.contains("approved", ignoreCase = true) == true
-    }
+    val uiState = if (useEmailLogin) legacyUiState else mediaHubUiState
+    val legacyFullAccount = legacyUiState.authState as? AuthState.FullAccount
+    val mediaHubSignedIn = !useEmailLogin && mediaHubAuthViewModel.hasActiveSession
+    val isSignedIn = if (useEmailLogin) legacyFullAccount != null else mediaHubSignedIn
+    val fullAccount = if (useEmailLogin) legacyFullAccount else null
+    val isOnboardingMode = onContinue != null
     var onboardingTransitionHandled by remember(isOnboardingMode) { mutableStateOf(false) }
     var exitRequested by remember { mutableStateOf(false) }
     var showSignOutConfirmation by remember { mutableStateOf(false) }
     val loginFocusRequester = remember { FocusRequester() }
 
+    fun clearActiveQrSession() {
+        if (!useEmailLogin) mediaHubAuthViewModel.clearQrLoginSession()
+    }
+
     fun leaveAuthScreen() {
         exitRequested = true
-        viewModel.clearQrLoginSession()
+        clearActiveQrSession()
         onBackPress()
     }
 
     fun continueFromAuthScreen() {
         exitRequested = true
         if (onContinue != null && !isSignedIn) {
-            viewModel.signOut()
+            if (useEmailLogin) viewModel.signOut() else mediaHubAuthViewModel.signOut()
         }
-        viewModel.clearQrLoginSession()
-        if (onContinue != null) {
-            onContinue()
-        } else {
-            onBackPress()
-        }
+        clearActiveQrSession()
+        if (onContinue != null) onContinue() else onBackPress()
     }
 
-    BackHandler {
-        leaveAuthScreen()
+    BackHandler { leaveAuthScreen() }
+
+    DisposableEffect(useEmailLogin) {
+        onDispose { clearActiveQrSession() }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            viewModel.clearQrLoginSession()
-        }
-    }
-
-    LaunchedEffect(uiState.authState, isSignedIn, uiState.qrLoginCode, uiState.isLoading, uiState.error, exitRequested) {
+    LaunchedEffect(useEmailLogin, mediaHubSignedIn, mediaHubUiState.qrLoginCode, mediaHubUiState.isLoading, mediaHubUiState.error, exitRequested) {
         if (
-            useQrLogin &&
+            !useEmailLogin &&
             !exitRequested &&
-            uiState.authState !is AuthState.Loading &&
-            !isSignedIn &&
-            uiState.qrLoginCode.isNullOrBlank() &&
-            uiState.error.isNullOrBlank() &&
-            !uiState.isLoading
+            !mediaHubSignedIn &&
+            mediaHubUiState.qrLoginCode.isNullOrBlank() &&
+            mediaHubUiState.error.isNullOrBlank() &&
+            !mediaHubUiState.isLoading
         ) {
-            viewModel.startQrLogin()
+            mediaHubAuthViewModel.startQrLogin()
         }
     }
 
-    LaunchedEffect(isSignedIn) {
-        if (useQrLogin && isSignedIn && !uiState.qrLoginCode.isNullOrBlank()) {
-            viewModel.clearQrLoginSession()
-        }
-    }
-
-    LaunchedEffect(isApproved, uiState.isLoading) {
-        if (useQrLogin && isApproved && !uiState.isLoading) {
-            viewModel.exchangeQrLogin()
+    LaunchedEffect(mediaHubSignedIn) {
+        if (!useEmailLogin && mediaHubSignedIn && !mediaHubUiState.qrLoginCode.isNullOrBlank()) {
+            mediaHubAuthViewModel.clearQrLoginSession()
         }
     }
 
@@ -161,7 +151,7 @@ fun AuthQrSignInScreen(
         if (isSignedIn) {
             onboardingTransitionHandled = true
             exitRequested = true
-            viewModel.clearQrLoginSession()
+            clearActiveQrSession()
             onContinue.invoke()
         }
     }
@@ -180,10 +170,7 @@ fun AuthQrSignInScreen(
             .background(Color.Black)
             .authGradientBackground()
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize(),
-        ) {
+        Row(modifier = Modifier.fillMaxSize()) {
             AuthQrBrandPanel(
                 modifier = Modifier
                     .weight(1f)
@@ -216,16 +203,12 @@ fun AuthQrSignInScreen(
                 onRefreshOrSignOut = {
                     if (isSignedIn) {
                         showSignOutConfirmation = true
-                    } else {
-                        viewModel.startQrLogin()
+                    } else if (!useEmailLogin) {
+                        mediaHubAuthViewModel.startQrLogin()
                     }
                 },
                 onBackOrContinue = {
-                    if (isOnboardingMode) {
-                        continueFromAuthScreen()
-                    } else {
-                        leaveAuthScreen()
-                    }
+                    if (isOnboardingMode) continueFromAuthScreen() else leaveAuthScreen()
                 },
                 initialFocusRequester = loginFocusRequester
             )
@@ -234,21 +217,17 @@ fun AuthQrSignInScreen(
         if (BuildConfig.FEATURE_CUSTOM_SERVER_CONNECTIONS_ENABLED) {
             ServerOptionsMenuHost(
                 viewModel = hiltViewModel(),
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(28.dp)
+                modifier = Modifier.align(Alignment.TopStart).padding(28.dp)
             )
         }
     }
 
-    LaunchedEffect(Unit) {
-        loginFocusRequester.requestFocusAfterFrames(frames = 3)
-    }
+    LaunchedEffect(Unit) { loginFocusRequester.requestFocusAfterFrames(frames = 3) }
 
     if (showSignOutConfirmation) {
         AccountSignOutConfirmationDialog(
             onConfirm = {
-                viewModel.signOut()
+                if (useEmailLogin) viewModel.signOut() else mediaHubAuthViewModel.signOut()
                 showSignOutConfirmation = false
             },
             onDismiss = { showSignOutConfirmation = false }
@@ -287,11 +266,7 @@ private fun AuthQrBrandPanel(
         if (isSignedIn || useEmailLogin) {
             Spacer(modifier = Modifier.height(18.dp))
             Text(
-                text = if (isSignedIn) {
-                    stringResource(R.string.auth_qr_connected)
-                } else {
-                    stringResource(R.string.auth_email_hint)
-                },
+                text = if (isSignedIn) stringResource(R.string.auth_qr_connected) else stringResource(R.string.auth_email_hint),
                 modifier = Modifier.widthIn(max = 400.dp),
                 style = MaterialTheme.typography.bodyLarge.copy(
                     color = AuthTextSecondary,
@@ -303,17 +278,9 @@ private fun AuthQrBrandPanel(
         }
         if (isSignedIn && fullAccount != null) {
             Spacer(modifier = Modifier.height(24.dp))
-            Text(
-                text = fullAccount.email,
-                style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFF7CFF9B)
-            )
+            Text(text = fullAccount.email, style = MaterialTheme.typography.titleMedium, color = Color(0xFF7CFF9B))
             Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = fullAccount.userId,
-                style = MaterialTheme.typography.bodySmall,
-                color = AuthTextSecondary
-            )
+            Text(text = fullAccount.userId, style = MaterialTheme.typography.bodySmall, color = AuthTextSecondary)
         }
     }
 }
@@ -339,48 +306,26 @@ private fun AuthQrLoginPane(
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = if (isSignedIn) {
-                stringResource(R.string.auth_qr_synced_data)
-            } else if (useEmailLogin) {
-                stringResource(R.string.auth_email_instruction)
-            } else {
-                stringResource(R.string.auth_qr_scan_instruction)
-            },
-            style = MaterialTheme.typography.bodyLarge.copy(
-                color = AuthTextSecondary,
-                fontSize = 15.sp,
-                lineHeight = 21.sp
-            ),
+            text = if (isSignedIn) stringResource(R.string.auth_qr_synced_data)
+            else if (useEmailLogin) stringResource(R.string.auth_email_instruction)
+            else stringResource(R.string.auth_qr_scan_instruction),
+            style = MaterialTheme.typography.bodyLarge.copy(color = AuthTextSecondary, fontSize = 15.sp, lineHeight = 21.sp),
             textAlign = TextAlign.Center
         )
         Spacer(modifier = Modifier.height(28.dp))
 
         if (isSignedIn && !isOnboardingMode) {
-            AccountConnectedStatsStrip(
-                stats = uiState.connectedStats,
-                isLoading = uiState.isStatsLoading
-            )
+            AccountConnectedStatsStrip(stats = uiState.connectedStats, isLoading = uiState.isStatsLoading)
         } else if (isSignedIn && isOnboardingMode) {
-            StatusPill(
-                text = stringResource(R.string.auth_qr_finishing),
-                containerColor = AuthSecondaryButtonBackground,
-                contentColor = AuthTextSecondary
-            )
+            StatusPill(text = stringResource(R.string.auth_qr_finishing), containerColor = AuthSecondaryButtonBackground, contentColor = AuthTextSecondary)
         } else if (useEmailLogin) {
-            AuthEmailLoginForm(
-                uiState = uiState,
-                onSignIn = onSignIn,
-                initialFocusRequester = initialFocusRequester
-            )
+            AuthEmailLoginForm(uiState = uiState, onSignIn = onSignIn, initialFocusRequester = initialFocusRequester)
         } else {
             AuthQrCodeBlock(uiState = uiState, remainingMillis = remainingMillis)
         }
 
         Spacer(modifier = Modifier.height(28.dp))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
+        Row(horizontalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md), verticalAlignment = Alignment.CenterVertically) {
             if (isSignedIn || !useEmailLogin) {
                 Button(
                     onClick = onRefreshOrSignOut,
@@ -400,22 +345,16 @@ private fun AuthQrLoginPane(
                         )
                     )
                 ) {
-                    Text(
-                        when {
-                            isSignedIn -> stringResource(R.string.account_sign_out)
-                            uiState.isLoading -> stringResource(R.string.auth_qr_please_wait)
-                            else -> stringResource(R.string.auth_qr_refresh)
-                        }
-                    )
+                    Text(when {
+                        isSignedIn -> stringResource(R.string.account_sign_out)
+                        uiState.isLoading -> stringResource(R.string.auth_qr_please_wait)
+                        else -> stringResource(R.string.auth_qr_refresh)
+                    })
                 }
             }
             Button(
                 onClick = onBackOrContinue,
-                modifier = if (!focusEmail && !focusMainAction) {
-                    Modifier.focusRequester(initialFocusRequester)
-                } else {
-                    Modifier
-                },
+                modifier = if (!focusEmail && !focusMainAction) Modifier.focusRequester(initialFocusRequester) else Modifier,
                 colors = ButtonDefaults.colors(
                     containerColor = AuthSecondaryButtonBackground,
                     focusedContainerColor = Color.White,
@@ -429,13 +368,9 @@ private fun AuthQrLoginPane(
                     )
                 )
             ) {
-                Text(
-                    if (isOnboardingMode) {
-                        if (isSignedIn) stringResource(R.string.auth_qr_continue) else stringResource(R.string.auth_qr_continue_without_account)
-                    } else {
-                        stringResource(R.string.auth_qr_back)
-                    }
-                )
+                Text(if (isOnboardingMode) {
+                    if (isSignedIn) stringResource(R.string.auth_qr_continue) else stringResource(R.string.auth_qr_continue_without_account)
+                } else stringResource(R.string.auth_qr_back))
             }
         }
     }
@@ -450,401 +385,77 @@ private fun AuthEmailLoginForm(
     var email by rememberSaveable { mutableStateOf("") }
     var password by rememberSaveable { mutableStateOf("") }
     val canSignIn = email.isNotBlank() && password.isNotBlank() && !uiState.isLoading
-    val submit = {
-        if (canSignIn) {
-            onSignIn(email.trim(), password)
-        }
-    }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md)
-    ) {
-        InputField(
-            value = email,
-            onValueChange = { email = it },
-            placeholder = stringResource(R.string.auth_email_placeholder),
-            keyboardType = KeyboardType.Email,
-            imeAction = ImeAction.Next,
-            modifier = Modifier.focusRequester(initialFocusRequester)
-        )
-        InputField(
-            value = password,
-            onValueChange = { password = it },
-            placeholder = stringResource(R.string.auth_password_placeholder),
-            keyboardType = KeyboardType.Password,
-            isPassword = true,
-            imeAction = ImeAction.Done,
-            onImeAction = submit
-        )
+    val submit = { if (canSignIn) onSignIn(email.trim(), password) }
+    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.md)) {
+        InputField(value = email, onValueChange = { email = it }, placeholder = stringResource(R.string.auth_email_placeholder), keyboardType = KeyboardType.Email, imeAction = ImeAction.Next, modifier = Modifier.focusRequester(initialFocusRequester))
+        InputField(value = password, onValueChange = { password = it }, placeholder = stringResource(R.string.auth_password_placeholder), keyboardType = KeyboardType.Password, isPassword = true, imeAction = ImeAction.Done, onImeAction = submit)
         Button(
             onClick = submit,
             enabled = canSignIn,
             modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.colors(
-                containerColor = Color.White,
-                focusedContainerColor = Color.White,
-                contentColor = Color.Black,
-                focusedContentColor = Color.Black,
-                disabledContainerColor = Color.White.copy(alpha = 0.12f),
-                disabledContentColor = AuthTextPrimary.copy(alpha = 0.58f)
-            ),
+            colors = ButtonDefaults.colors(containerColor = Color.White, focusedContainerColor = Color.White, contentColor = Color.Black, focusedContentColor = Color.Black, disabledContainerColor = Color.White.copy(alpha = 0.12f), disabledContentColor = AuthTextPrimary.copy(alpha = 0.58f)),
             shape = ButtonDefaults.shape(RoundedCornerShape(16.dp))
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = if (uiState.isLoading) {
-                        stringResource(R.string.auth_email_signing_in)
-                    } else {
-                        stringResource(R.string.auth_email_sign_in)
-                    },
-                    fontWeight = FontWeight.SemiBold,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-        AuthTermsAcknowledgement()
-        uiState.error?.takeIf { it.isNotBlank() }?.let { error ->
-            StatusPill(
-                text = error,
-                containerColor = Color(0x33C62828),
-                contentColor = Color(0xFFFF6E6E)
-            )
-        }
+        ) { Text(stringResource(R.string.auth_email_sign_in)) }
     }
 }
 
 @Composable
-private fun AuthQrCodeBlock(
-    uiState: AccountUiState,
-    remainingMillis: Long
-) {
+private fun AuthQrCodeBlock(uiState: AccountUiState, remainingMillis: Long) {
+    val context = LocalContext.current
     val qrBitmap = uiState.qrLoginBitmap
-    if (qrBitmap != null) {
-        Image(
-            bitmap = qrBitmap.asImageBitmap(),
-            contentDescription = stringResource(R.string.cd_qr_login),
-            modifier = Modifier
-                .size(206.dp)
-                .background(Color.White, RoundedCornerShape(8.dp))
-                .padding(8.dp),
-            contentScale = ContentScale.Fit
-        )
-    } else {
+    val qrUrl = uiState.qrLoginUrl
+    val qrCode = uiState.qrLoginUserCode ?: uiState.qrLoginCode
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(
-            modifier = Modifier
-                .size(206.dp)
-                .background(AuthSecondaryButtonBackground, RoundedCornerShape(8.dp))
-                .border(1.dp, AuthSecondaryButtonBorder, RoundedCornerShape(8.dp)),
+            modifier = Modifier.size(236.dp).background(Color.White, RoundedCornerShape(18.dp)).padding(14.dp),
             contentAlignment = Alignment.Center
         ) {
-            Text(
-                text = if (uiState.isLoading) stringResource(R.string.auth_qr_generating) else stringResource(R.string.auth_qr_unavailable),
-                color = AuthTextSecondary,
-                textAlign = TextAlign.Center
-            )
+            if (qrBitmap != null) {
+                Image(bitmap = qrBitmap.asImageBitmap(), contentDescription = stringResource(R.string.auth_qr_code_content_description), modifier = Modifier.fillMaxSize())
+            } else {
+                SkeletonBar(modifier = Modifier.fillMaxSize(), brush = rememberShimmerBrush())
+            }
         }
-    }
-
-    AuthQrManualCodeDetails(
-        verificationUri = uiState.qrLoginVerificationUri,
-        qrLoginCode = uiState.qrLoginUserCode ?: uiState.qrLoginCode,
-        expiresAtMillis = uiState.qrLoginExpiresAtMillis,
-        remainingMillis = remainingMillis,
-        isLoading = uiState.isLoading
-    )
-
-    Spacer(modifier = Modifier.height(12.dp))
-    AuthTermsAcknowledgement()
-
-    val statusText = uiState.error ?: uiState.qrLoginStatus
-    if (!statusText.isNullOrBlank()) {
-        Spacer(modifier = Modifier.height(14.dp))
-        if (uiState.error != null) {
-            StatusPill(
-                text = statusText,
-                containerColor = Color(0x33C62828),
-                contentColor = Color(0xFFFF6E6E)
-            )
-        } else {
-            Text(
-                text = statusText,
-                style = MaterialTheme.typography.bodySmall,
-                color = AuthTextSecondary,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
-            )
+        Spacer(modifier = Modifier.height(18.dp))
+        if (!qrCode.isNullOrBlank()) {
+            Text(text = qrCode, style = MaterialTheme.typography.headlineMedium, color = AuthTextPrimary, fontWeight = FontWeight.Bold, letterSpacing = 4.sp)
         }
-    }
-}
-
-@Composable
-private fun AuthQrManualCodeDetails(
-    verificationUri: String?,
-    qrLoginCode: String?,
-    expiresAtMillis: Long?,
-    remainingMillis: Long,
-    isLoading: Boolean
-) {
-    val displayUri = verificationUri?.takeIf { it.isNotBlank() }
-    val displayCode = qrLoginCode?.takeIf { it.isNotBlank() }
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        if (displayUri != null && displayCode != null) {
-            Spacer(modifier = Modifier.height(18.dp))
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(text = formatRemainingTime(remainingMillis), style = MaterialTheme.typography.bodyMedium, color = AuthTextSecondary)
+        if (!qrUrl.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(14.dp))
             Text(
-                text = stringResource(R.string.auth_qr_manual_instruction, displayVerificationUri(displayUri)),
+                text = stringResource(R.string.auth_qr_open_on_phone),
+                modifier = Modifier.clickable {
+                    runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(qrUrl))) }
+                },
                 style = MaterialTheme.typography.bodyMedium,
-                color = AuthTextSecondary,
-                textAlign = TextAlign.Center
+                color = Color(0xFF7CFF9B)
             )
-            Spacer(modifier = Modifier.height(10.dp))
-            Text(
-                text = formatDeviceLoginCode(displayCode),
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    fontSize = if (displayCode.length == 6) 24.sp else 14.sp,
-                    letterSpacing = if (displayCode.length == 6) 3.sp else 0.sp
-                ),
-                color = AuthTextPrimary,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
-            )
-            if (expiresAtMillis != null) {
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = stringResource(R.string.auth_qr_expires, formatDuration(remainingMillis)),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AuthTextSecondary
-                )
-            }
-        } else if (isLoading) {
-            val shimmerBrush = rememberShimmerBrush(backdropAware = true)
-            Spacer(modifier = Modifier.height(18.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(20.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                SkeletonBar(width = 238.dp, height = 12.dp, brush = shimmerBrush, cornerRadius = 6.dp)
-            }
-            Spacer(modifier = Modifier.height(10.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(32.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                SkeletonBar(width = 116.dp, height = 22.dp, brush = shimmerBrush, cornerRadius = 8.dp)
-            }
-            Spacer(modifier = Modifier.height(6.dp))
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                SkeletonBar(width = 84.dp, height = 8.dp, brush = shimmerBrush, cornerRadius = 4.dp)
-            }
+        }
+        if (!uiState.error.isNullOrBlank()) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Text(text = uiState.error.orEmpty(), style = MaterialTheme.typography.bodySmall, color = Color(0xFFFF8A80), textAlign = TextAlign.Center)
         }
     }
 }
 
-private fun formatDeviceLoginCode(value: String): String =
-    if (value.length == 6) "${value.take(3)}-${value.drop(3)}" else value
-
-private fun displayVerificationUri(value: String): String = value
-    .removePrefix("https://")
-    .removePrefix("http://")
-    .trimEnd('/')
-
-@Composable
-private fun AuthTermsAcknowledgement() {
-    val context = LocalContext.current
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = stringResource(R.string.auth_qr_terms_prefix),
-            style = MaterialTheme.typography.bodyMedium.copy(
-                color = AuthTextSecondary,
-                fontSize = 13.sp,
-                lineHeight = 18.sp
-            )
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            text = stringResource(R.string.auth_qr_terms_link),
-            modifier = Modifier.clickable {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://nuvio.tv/terms")))
-            },
-            style = MaterialTheme.typography.bodyMedium.copy(
-                color = AuthTextPrimary,
-                fontSize = 13.sp,
-                lineHeight = 18.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-        )
-    }
-}
-
-@Composable
-private fun StatusPill(
-    text: String,
-    containerColor: Color,
-    contentColor: Color
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .border(NuvioTheme.spacing.hairline, NuvioTheme.colors.Border.copy(alpha = 0.35f), RoundedCornerShape(NuvioTheme.radii.md))
-            .background(containerColor, RoundedCornerShape(NuvioTheme.radii.md))
-            .padding(horizontal = NuvioTheme.spacing.md, vertical = 10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = contentColor,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.wrapContentHeight()
-        )
-    }
-}
-
-@Composable
-private fun AccountConnectedStatsStrip(
-    stats: AccountConnectedStats?,
-    isLoading: Boolean
-) {
-    val values = if (isLoading) {
-        listOf("...", "...", "...", "...")
-    } else {
-        listOf(
-            (stats?.addons ?: 0).toString(),
-            (stats?.plugins ?: 0).toString(),
-            (stats?.library ?: 0).toString(),
-            (stats?.watchProgress ?: 0).toString()
-        )
-    }
-    val labels = listOf(
-        stringResource(R.string.account_stat_addons),
-        stringResource(R.string.account_stat_plugins),
-        stringResource(R.string.account_stat_library),
-        stringResource(R.string.account_stat_progress)
-    )
-
-    Column(
-        modifier = Modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(NuvioTheme.spacing.sm)
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(NuvioTheme.spacing.hairline)
-                .background(NuvioTheme.colors.Border.copy(alpha = 0.8f))
-        )
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            repeat(values.size) { index ->
-                AccountStatItem(
-                    value = values[index],
-                    label = labels[index],
-                    modifier = Modifier.weight(1f)
-                )
-                if (index != values.lastIndex) {
-                    Box(
-                        modifier = Modifier
-                            .height(44.dp)
-                            .width(NuvioTheme.spacing.hairline)
-                            .background(NuvioTheme.colors.Border.copy(alpha = 0.75f))
-                    )
-                }
-            }
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(NuvioTheme.spacing.hairline)
-                .background(NuvioTheme.colors.Border.copy(alpha = 0.8f))
-        )
-    }
-}
-
-@Composable
-private fun AccountStatItem(
-    value: String,
-    label: String,
-    modifier: Modifier = Modifier
-) {
-    Column(
-        modifier = modifier.padding(vertical = 6.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Text(
-            text = value,
-            style = MaterialTheme.typography.titleMedium,
-            color = NuvioTheme.colors.TextPrimary,
-            textAlign = TextAlign.Center
-        )
-        Spacer(modifier = Modifier.height(NuvioTheme.spacing.xxs))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.bodySmall,
-            color = NuvioTheme.colors.TextSecondary,
-            textAlign = TextAlign.Center
-        )
-    }
+private fun formatRemainingTime(remainingMillis: Long): String {
+    val seconds = (remainingMillis / 1_000L).coerceAtLeast(0L)
+    return "%d:%02d".format(seconds / 60L, seconds % 60L)
 }
 
 private fun Modifier.authGradientBackground(): Modifier = drawWithCache {
-    val angleRadians = 122.0 * PI / 180.0
-    val directionX = sin(angleRadians).toFloat()
-    val directionY = (-cos(angleRadians)).toFloat()
-    val halfLength = (abs(size.width * directionX) + abs(size.height * directionY)) / 2f
+    val angle = 28f * (PI / 180f).toFloat()
+    val x = cos(angle)
+    val y = sin(angle)
+    val length = abs(size.width * x) + abs(size.height * y)
     val center = Offset(size.width / 2f, size.height / 2f)
-    val start = Offset(
-        x = center.x - directionX * halfLength,
-        y = center.y - directionY * halfLength
-    )
-    val end = Offset(
-        x = center.x + directionX * halfLength,
-        y = center.y + directionY * halfLength
-    )
+    val delta = Offset(x * length / 2f, y * length / 2f)
     val brush = Brush.linearGradient(
-        colorStops = arrayOf(
-            0f to Color(0xFF21113B),
-            0.14f to Color(0xFF21113B),
-            0.26f to Color(0xFF1A0E2F),
-            0.36f to Color(0xFF130A23),
-            0.48f to Color(0xFF0A060F),
-            0.60f to Color(0xFF050408),
-            0.70f to Color.Black,
-            1f to Color.Black
-        ),
-        start = start,
-        end = end
+        colors = listOf(Color(0xFF090B0B), Color(0xFF111514), Color(0xFF0B2018)),
+        start = center - delta,
+        end = center + delta
     )
-    onDrawBehind {
-        drawRect(brush = brush)
-    }
-}
-
-private fun formatDuration(millis: Long): String {
-    val totalSeconds = (millis / 1000).coerceAtLeast(0L)
-    val minutes = totalSeconds / 60
-    val seconds = totalSeconds % 60
-    return "%02d:%02d".format(minutes, seconds)
+    onDrawBehind { drawRect(brush) }
 }
