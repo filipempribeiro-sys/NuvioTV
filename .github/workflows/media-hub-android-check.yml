@@ -31,9 +31,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      # MEDIA-HUB development APKs must be installable without the private
-      # legacy Nuvio release keystore. The app build already supports this
-      # explicit CI switch; no signing secrets are committed to the repo.
       CI_USE_DEBUG_SIGNING: 'true'
     steps:
       - name: Download exact source snapshot without Git/submodule traversal
@@ -47,6 +44,29 @@ jobs:
           test -f "$GITHUB_WORKSPACE/gradlew"
           chmod +x "$GITHUB_WORKSPACE/gradlew"
           echo 'MEDIA-HUB exact commit snapshot extracted without Git/submodule traversal.'
+
+      - name: Use Android debug signing for CI development APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/build.gradle.kts')
+          text = path.read_text()
+          old = '''        debug {
+            signingConfig = signingConfigs.getByName("release")'''
+          new = '''        debug {
+            signingConfig = if (useDebugReleaseSigning) {
+                signingConfigs.getByName("debug")
+            } else {
+                signingConfigs.getByName("release")
+            }'''
+          if old not in text:
+              raise SystemExit('Expected debug signing block not found; refusing an unsafe CI patch.')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          echo 'MEDIA-HUB CI build configured with the standard Android debug key.'
 
       - uses: actions/setup-java@v4
         with:
