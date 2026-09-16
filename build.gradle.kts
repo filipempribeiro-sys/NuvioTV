@@ -17,6 +17,17 @@ plugins {
 subprojects {
     if (name == "app") {
         plugins.withId("com.android.application") {
+            // mpv and ASS both ship the Android C++ runtime. Match the inherited
+            // Nuvio packaging policy and keep one consistent native runtime copy.
+            extensions.configure<com.android.build.api.dsl.ApplicationExtension> {
+                packaging {
+                    jniLibs {
+                        useLegacyPackaging = true
+                        pickFirsts += "lib/*/libc++_shared.so"
+                    }
+                }
+            }
+
             dependencies {
                 add("implementation", "androidx.core:core-splashscreen:1.0.1")
                 add("implementation", "androidx.recyclerview:recyclerview:1.4.0")
