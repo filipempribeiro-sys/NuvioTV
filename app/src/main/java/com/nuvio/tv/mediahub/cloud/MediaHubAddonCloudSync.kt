@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
 
 /**
  * Bridges the MEDIA•HUB /sync addon payload to the existing local addon engine.
@@ -50,7 +51,9 @@ class MediaHubAddonCloudSync @Inject constructor(
             addonPreferences.setAddonOrder(addons.map { it.url })
             addonPreferences.setAddonEnabledStates(addons.associate { it.url to it.enabled })
             addonPreferences.setUserSetNames(
-                addons.mapNotNull { addon -> addon.name?.takeIf(String::isNotBlank)?.let { addon.url to it } }.toMap()
+                addons.mapNotNull { addon ->
+                    addon.name?.takeIf(String::isNotBlank)?.let { addon.url to it }
+                }.toMap()
             )
             Log.d(TAG, "Applied ${addons.size} MEDIA-HUB cloud addon(s) to local playback sources")
             PullResult(true, addons.size)
@@ -60,26 +63,34 @@ class MediaHubAddonCloudSync @Inject constructor(
     suspend fun pushLocal(): Result<Int> {
         if (!authState.isAuthenticated) return Result.success(0)
 
-        val urls = addonPreferences.installedAddonUrls.first()
-        val enabled = addonPreferences.addonEnabledStates.first()
-        val names = addonPreferences.userSetNames.first()
-        val payload = JsonArray(urls.mapIndexed { index, url ->
-            JsonObject(buildMap {
-                put("url", JsonPrimitive(url))
-                put("sort_order", JsonPrimitive(index))
-                put("enabled", JsonPrimitive(enabled[url] ?: true))
-                names[url]?.takeIf(String::isNotBlank)?.let { put("name", JsonPrimitive(it)) }
+        return runCatching {
+            val urls = addonPreferences.installedAddonUrls.first()
+            val enabled = addonPreferences.addonEnabledStates.first()
+            val names = addonPreferences.userSetNames.first()
+            val payload = JsonArray(urls.mapIndexed { index, url ->
+                JsonObject(buildMap {
+                    put("url", JsonPrimitive(url))
+                    put("sort_order", JsonPrimitive(index))
+                    put("enabled", JsonPrimitive(enabled[url] ?: true))
+                    names[url]?.takeIf(String::isNotBlank)?.let { put("name", JsonPrimitive(it)) }
+                })
             })
-        })
-        val current = cloudApi.getSync().getOrThrow()
-        cloudApi.putSync(current.copy(addons = payload)).getOrThrow()
-        return Result.success(urls.size)
+
+            val current = cloudApi.getSync().getOrThrow()
+            cloudApi.putSync(current.copy(addons = payload)).getOrThrow()
+            Log.d(TAG, "Pushed ${urls.size} local addon(s) to MEDIA-HUB cloud")
+            urls.size
+        }.onFailure { error ->
+            Log.e(TAG, "Failed to push local addons to MEDIA-HUB cloud", error)
+        }
     }
 
     private data class CloudAddon(
         val url: String,
         val enabled: Boolean,
-        val name: String?
+        val name: String?,
+        val sortOrder: Int?,
+        val sourceIndex: Int
     )
 
     private fun parseAddons(element: JsonElement?): List<CloudAddon>? {
@@ -91,23 +102,32 @@ class MediaHubAddonCloudSync @Inject constructor(
             else -> null
         } ?: return null
 
-        return array.mapNotNull { item ->
+        val parsed = array.mapIndexedNotNull { index, item ->
             when (item) {
                 is JsonPrimitive -> item.contentOrNull?.takeIf(String::isNotBlank)?.let {
-                    CloudAddon(it, true, null)
+                    CloudAddon(it, true, null, null, index)
                 }
                 is JsonObject -> {
                     val url = (item["url"] as? JsonPrimitive)?.contentOrNull
-                        ?.takeIf(String::isNotBlank) ?: return@mapNotNull null
+                        ?.takeIf(String::isNotBlank) ?: return@mapIndexedNotNull null
                     CloudAddon(
                         url = url,
                         enabled = (item["enabled"] as? JsonPrimitive)?.booleanOrNull ?: true,
-                        name = (item["name"] as? JsonPrimitive)?.contentOrNull
+                        name = (item["name"] as? JsonPrimitive)?.contentOrNull,
+                        sortOrder = (item["sort_order"] as? JsonPrimitive)?.intOrNull,
+                        sourceIndex = index
                     )
                 }
                 else -> null
             }
         }
+
+        // Match the inherited sync contract: explicit sort_order wins. Payloads
+        // without it keep their original array order for backwards compatibility.
+        return parsed.sortedWith(
+            compareBy<CloudAddon> { it.sortOrder ?: it.sourceIndex }
+                .thenBy { it.sourceIndex }
+        )
     }
 
     private companion object {
