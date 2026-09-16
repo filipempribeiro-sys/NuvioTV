@@ -14,6 +14,11 @@ plugins {
 // MEDIA•HUB still compiles the inherited Nuvio playback/plugin surface while the
 // migration is in progress. Keep the compatibility dependencies here so the
 // MEDIA•HUB app module can stay focused on product-specific configuration.
+//
+// These are intentionally attached to the base implementation configuration.
+// The Android plugin callback fires before flavor-specific configurations such
+// as fullImplementation are guaranteed to exist. MEDIA•HUB currently builds the
+// full distribution, so the base classpath is both safe and deterministic here.
 subprojects {
     if (name == "app") {
         plugins.withId("com.android.application") {
@@ -36,20 +41,20 @@ subprojects {
                     exclude(group = "org.jetbrains.compose.foundation")
                 }
 
-                add("fullImplementation", files("app/libs/quickjs-kt-android-1.0.5-nuvio.aar"))
-                add("fullImplementation", "org.jsoup:jsoup:1.17.2")
-                add("fullImplementation", "com.fasterxml.jackson.core:jackson-databind:2.17.0")
-                add("fullImplementation", "com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
-                add("fullImplementation", "com.github.Blatzar:NiceHttp:0.4.16")
-                add("fullImplementation", "org.conscrypt:conscrypt-android:2.5.2")
-                add("fullImplementation", "com.github.recloudstream.cloudstream:library:v4.7.0") {
+                add("implementation", files("app/libs/quickjs-kt-android-1.0.5-nuvio.aar"))
+                add("implementation", "org.jsoup:jsoup:1.17.2")
+                add("implementation", "com.fasterxml.jackson.core:jackson-databind:2.17.0")
+                add("implementation", "com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
+                add("implementation", "com.github.Blatzar:NiceHttp:0.4.16")
+                add("implementation", "org.conscrypt:conscrypt-android:2.5.2")
+                add("implementation", "com.github.recloudstream.cloudstream:library:v4.7.0") {
                     exclude(group = "org.mozilla", module = "rhino")
                     exclude(group = "com.github.AmarullisVFX", module = "newpipeextractor")
                     exclude(group = "com.github.AmaryllisVFX", module = "newpipeextractor")
                     exclude(group = "com.github.AmaryllisVFX.newpipeextractor")
                     exclude(group = "info.debatty", module = "java-string-similarity")
                 }
-                add("fullImplementation", "org.webjars.npm:crypto-js:4.2.0")
+                add("implementation", "org.webjars.npm:crypto-js:4.2.0")
 
                 add("implementation", "com.mikepenz:multiplatform-markdown-renderer-m3:0.33.0")
                 add("implementation", "org.nanohttpd:nanohttpd:2.3.1")
