@@ -4,12 +4,15 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuvio.tv.domain.model.AuthState
+import com.nuvio.tv.mediahub.cloud.MediaHubAddonCloudSync
 import com.nuvio.tv.ui.screens.account.AccountUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -25,7 +28,8 @@ import javax.inject.Inject
 @HiltViewModel
 class MediaHubAccountAuthViewModel @Inject constructor(
     @ApplicationContext context: Context,
-    private val globalAuthState: MediaHubAuthStateStore
+    private val globalAuthState: MediaHubAuthStateStore,
+    private val addonCloudSync: MediaHubAddonCloudSync
 ) : ViewModel() {
     private val bridge = MediaHubAccountQrBridge(context.applicationContext)
 
@@ -54,6 +58,21 @@ class MediaHubAccountAuthViewModel @Inject constructor(
             globalAuthState.authState.collect { auth ->
                 _uiState.update { it.copy(authState = auth) }
             }
+        }
+
+        // A valid MEDIA•HUB account feeds its cloud addon/source snapshot into
+        // the existing catalog + stream resolver. Playback stays on the proven
+        // local engine instead of creating a parallel player/source stack.
+        viewModelScope.launch {
+            globalAuthState.authState
+                .map { it is AuthState.FullAccount }
+                .distinctUntilChanged()
+                .collect { authenticated ->
+                    if (authenticated) {
+                        // Cloud failure is deliberately non-fatal: local sources remain usable.
+                        addonCloudSync.pullIntoLocal()
+                    }
+                }
         }
     }
 
