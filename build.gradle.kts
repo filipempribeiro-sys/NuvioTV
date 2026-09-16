@@ -14,11 +14,6 @@ plugins {
 // MEDIA•HUB still compiles the inherited Nuvio playback/plugin surface while the
 // migration is in progress. Keep the compatibility dependencies here so the
 // MEDIA•HUB app module can stay focused on product-specific configuration.
-//
-// These are intentionally attached to the base implementation configuration.
-// The Android plugin callback fires before flavor-specific configurations such
-// as fullImplementation are guaranteed to exist. MEDIA•HUB currently builds the
-// full distribution, so the base classpath is both safe and deterministic here.
 subprojects {
     if (name == "app") {
         plugins.withId("com.android.application") {
@@ -34,14 +29,14 @@ subprojects {
                 add("implementation", "com.airbnb.android:lottie-compose:6.7.1")
 
                 add("implementation", "io.github.peerless2012:ass-media:0.4.0")
-                add("implementation", files("app/libs/nextlib-mediainfo-local.aar"))
+                add("implementation", files("libs/nextlib-mediainfo-local.aar"))
                 add("implementation", "io.github.abdallahmehiz:mpv-android-lib:0.1.12")
                 add("implementation", "dev.chrisbanes.haze:haze-android:1.7.2") {
                     exclude(group = "org.jetbrains.compose.ui")
                     exclude(group = "org.jetbrains.compose.foundation")
                 }
 
-                add("implementation", files("app/libs/quickjs-kt-android-1.0.5-nuvio.aar"))
+                add("implementation", files("libs/quickjs-kt-android-1.0.5-nuvio.aar"))
                 add("implementation", "org.jsoup:jsoup:1.17.2")
                 add("implementation", "com.fasterxml.jackson.core:jackson-databind:2.17.0")
                 add("implementation", "com.fasterxml.jackson.module:jackson-module-kotlin:2.17.0")
