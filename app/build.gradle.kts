@@ -36,27 +36,16 @@ fun cmakePath(path: String): String {
 
 val localProperties = Properties().apply {
     val localPropertiesFile = rootProject.file("local.properties")
-    if (localPropertiesFile.exists()) {
-        load(localPropertiesFile.inputStream())
-    }
+    if (localPropertiesFile.exists()) load(localPropertiesFile.inputStream())
 }
-
 val devProperties = Properties().apply {
     val devPropertiesFile = rootProject.file("local.dev.properties")
-    if (devPropertiesFile.exists()) {
-        load(devPropertiesFile.inputStream())
-    }
+    if (devPropertiesFile.exists()) load(devPropertiesFile.inputStream())
 }
 
-val enableDoviNative = parseBooleanProperty(
-    resolveProperty(devProperties, localProperties, "DOVI_NATIVE_ENABLED")
-)
-val doviExtractorHookReady = parseBooleanProperty(
-    resolveProperty(devProperties, localProperties, "DOVI_EXTRACTOR_HOOK_READY")
-)
-val doviEnableRealLink = parseBooleanProperty(
-    resolveProperty(devProperties, localProperties, "DOVI_ENABLE_REAL_LINK")
-)
+val enableDoviNative = parseBooleanProperty(resolveProperty(devProperties, localProperties, "DOVI_NATIVE_ENABLED"))
+val doviExtractorHookReady = parseBooleanProperty(resolveProperty(devProperties, localProperties, "DOVI_EXTRACTOR_HOOK_READY"))
+val doviEnableRealLink = parseBooleanProperty(resolveProperty(devProperties, localProperties, "DOVI_ENABLE_REAL_LINK"))
 val doviStaticLibPath = resolveProperty(devProperties, localProperties, "DOVI_LIBDOVI_STATIC_LIB")
 val doviIncludeDirPath = resolveProperty(devProperties, localProperties, "DOVI_LIBDOVI_INCLUDE_DIR")
 val doviPrebuiltRootPath = resolveProperty(devProperties, localProperties, "DOVI_LIBDOVI_PREBUILT_ROOT")
@@ -72,28 +61,18 @@ val sentryProject = providers.environmentVariable("SENTRY_PROJECT").orNull?.trim
 val sentryMappingUploadEnabled = sentryAuthToken != null && sentryOrg != null && sentryProject != null
 
 fun env(name: String): String? = providers.environmentVariable(name).orNull
+fun truthy(value: String?): Boolean = value.equals("true", true) || value.equals("1", true) || value.equals("yes", true)
 
-fun truthy(value: String?): Boolean {
-    return value.equals("true", ignoreCase = true) ||
-        value.equals("1", ignoreCase = true) ||
-        value.equals("yes", ignoreCase = true)
-}
-
-val buildingAppBundle = gradle.startParameter.taskNames.any { it.contains("bundle", ignoreCase = true) }
 val useDebugReleaseSigning = env("CI_USE_DEBUG_SIGNING").equals("true", ignoreCase = true)
 val useLocalFfmpegDecoder = truthy(
     providers.gradleProperty("useLocalFfmpegDecoder").orNull
         ?: env("USE_LOCAL_FFMPEG_DECODER")
         ?: localProperties.getProperty("USE_LOCAL_FFMPEG_DECODER")
 )
-val releaseStoreFilePath = env("NUVIO_RELEASE_STORE_FILE")
-    ?: localProperties.getProperty("NUVIO_RELEASE_STORE_FILE")
-val releaseKeyAliasValue = env("NUVIO_RELEASE_KEY_ALIAS")
-    ?: localProperties.getProperty("NUVIO_RELEASE_KEY_ALIAS", "nuviotv")
-val releaseKeyPasswordValue = env("NUVIO_RELEASE_KEY_PASSWORD")
-    ?: localProperties.getProperty("NUVIO_RELEASE_KEY_PASSWORD", "815787")
-val releaseStorePasswordValue = env("NUVIO_RELEASE_STORE_PASSWORD")
-    ?: localProperties.getProperty("NUVIO_RELEASE_STORE_PASSWORD", "815787")
+val releaseStoreFilePath = env("NUVIO_RELEASE_STORE_FILE") ?: localProperties.getProperty("NUVIO_RELEASE_STORE_FILE")
+val releaseKeyAliasValue = env("NUVIO_RELEASE_KEY_ALIAS") ?: localProperties.getProperty("NUVIO_RELEASE_KEY_ALIAS", "nuviotv")
+val releaseKeyPasswordValue = env("NUVIO_RELEASE_KEY_PASSWORD") ?: localProperties.getProperty("NUVIO_RELEASE_KEY_PASSWORD", "")
+val releaseStorePasswordValue = env("NUVIO_RELEASE_STORE_PASSWORD") ?: localProperties.getProperty("NUVIO_RELEASE_STORE_PASSWORD", "")
 
 android {
     namespace = "com.nuvio.tv"
@@ -143,8 +122,6 @@ android {
         buildConfigField("String", "PREMIUMIZE_CLIENT_ID", "\"${localProperties.getProperty("PREMIUMIZE_CLIENT_ID", "")}\"")
         buildConfigField("String", "SPONSOR_NAMES", buildConfigString(sponsorNames))
         buildConfigField("String", "SENTRY_DSN", buildConfigString(sentryDsn))
-
-        // In-app updater (GitHub Releases)
         buildConfigField("String", "GITHUB_OWNER", "\"NuvioMedia\"")
         buildConfigField("String", "GITHUB_REPO", "\"NuvioTV\"")
     }
@@ -173,11 +150,7 @@ android {
     }
 
     if (enableDoviNative) {
-        externalNativeBuild {
-            cmake {
-                path = file("src/main/cpp/CMakeLists.txt")
-            }
-        }
+        externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
     }
 
     signingConfigs {
@@ -191,18 +164,11 @@ android {
 
     buildTypes {
         debug {
-            signingConfig = if (useDebugReleaseSigning) {
-                signingConfigs.getByName("debug")
-            } else {
-                signingConfigs.getByName("release")
-            }
+            signingConfig = if (useDebugReleaseSigning) signingConfigs.getByName("debug") else signingConfigs.getByName("release")
             isDebuggable = false
             isMinifyEnabled = false
-
             buildConfigField("boolean", "IS_DEBUG_BUILD", "true")
             buildConfigField("String", "SENTRY_ENVIRONMENT", buildConfigString("debug"))
-
-            // Dev environment (from local.dev.properties)
             buildConfigField("String", "SUPABASE_URL", buildConfigString(resolveProperty(devProperties, localProperties, "NUVIO_SUPABASE_URL")))
             buildConfigField("String", "SUPABASE_ANON_KEY", buildConfigString(resolveProperty(devProperties, localProperties, "NUVIO_SUPABASE_ANON_KEY")))
             buildConfigField("String", "SUPABASE_FALLBACK_URL", buildConfigString(resolveProperty(devProperties, localProperties, "NUVIO_SUPABASE_FALLBACK_URL")))
@@ -224,20 +190,10 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            proguardFiles(
-                getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
-            )
-            signingConfig = if (useDebugReleaseSigning) {
-                signingConfigs.getByName("debug")
-            } else {
-                signingConfigs.getByName("release")
-            }
-
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = if (useDebugReleaseSigning) signingConfigs.getByName("debug") else signingConfigs.getByName("release")
             buildConfigField("boolean", "IS_DEBUG_BUILD", "false")
             buildConfigField("String", "SENTRY_ENVIRONMENT", buildConfigString("production"))
-
-            // Production environment (from local.properties)
             buildConfigField("String", "SUPABASE_URL", buildConfigString(localProperties.getProperty("NUVIO_SUPABASE_URL", "")))
             buildConfigField("String", "SUPABASE_ANON_KEY", buildConfigString(localProperties.getProperty("NUVIO_SUPABASE_ANON_KEY", "")))
             buildConfigField("String", "SUPABASE_FALLBACK_URL", buildConfigString(localProperties.getProperty("NUVIO_SUPABASE_FALLBACK_URL", "")))
@@ -262,31 +218,36 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-    kotlinOptions {
-        jvmTarget = "17"
+    kotlin {
+        compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
     }
-
     buildFeatures {
         compose = true
         buildConfig = true
     }
-
     packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
+        resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
     }
 }
 
-dependencies {
-    implementation(project(":libmpv-android"))
+configurations.all {
+    exclude(group = "androidx.media3", module = "media3-exoplayer")
+    exclude(group = "androidx.media3", module = "media3-common")
+    exclude(group = "androidx.media3", module = "media3-datasource")
+    exclude(group = "androidx.media3", module = "media3-datasource-okhttp")
+    exclude(group = "androidx.media3", module = "media3-exoplayer-hls")
+    exclude(group = "androidx.media3", module = "media3-extractor")
+}
 
+dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2026.05.01")
+    compileOnly("org.checkerframework:checker-qual:3.43.0")
+    baselineProfile(project(":baselineprofile"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
-    implementation(platform(libs.androidx.compose.bom))
+    implementation(composeBom)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
@@ -295,37 +256,30 @@ dependencies {
     implementation(libs.androidx.tv.material)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.hilt.navigation.compose)
-    implementation(libs.androidx.media3.exoplayer)
-    implementation(libs.androidx.media3.exoplayer.dash)
-    implementation(libs.androidx.media3.exoplayer.hls)
-    implementation(libs.androidx.media3.ui)
-    implementation(libs.androidx.media3.session)
-    implementation(libs.androidx.media3.datasource.okhttp)
-    implementation(libs.androidx.media3.datasource.rtmp)
-    implementation(libs.androidx.media3.decoder.ffmpeg)
-    implementation(libs.androidx.media3.decoder.av1)
-    implementation(libs.androidx.media3.decoder.vp9)
-    implementation(libs.androidx.media3.container)
-    implementation(libs.androidx.media3.exoplayer.smoothstreaming)
-    implementation(libs.androidx.media3.exoplayer.rtsp)
-    implementation(libs.androidx.media3.exoplayer.ima)
-    implementation(libs.androidx.media3.exoplayer.workmanager)
-    implementation(libs.androidx.media3.exoplayer.midi)
-    implementation(libs.androidx.media3.effect)
-    implementation(libs.androidx.media3.muxer)
-    implementation(libs.androidx.media3.transformer)
-    implementation(libs.androidx.media3.common.ktx)
-    implementation(libs.androidx.media3.datasource.cronet)
-    implementation(libs.androidx.media3.datasource.rtmp)
-    implementation(libs.androidx.media3.cast)
-    implementation(libs.androidx.media3.exoplayer.workmanager)
-    implementation(libs.androidx.media3.exoplayer.midi)
-    implementation(libs.androidx.media3.effect)
-    implementation(libs.androidx.media3.muxer)
-    implementation(libs.androidx.media3.transformer)
-    implementation(libs.androidx.media3.common.ktx)
-    implementation(libs.androidx.media3.datasource.cronet)
-    implementation(libs.androidx.media3.cast)
+
+    implementation(libs.media3.exoplayer.dash)
+    implementation(libs.media3.exoplayer.smoothstreaming)
+    implementation(libs.media3.exoplayer.rtsp)
+    implementation(libs.media3.decoder)
+    implementation(libs.media3.session)
+    implementation(libs.media3.container)
+    implementation(libs.media3.ui)
+    implementation("com.google.guava:guava:33.3.1-android")
+    implementation("androidx.media3:media3-database:1.8.0")
+    implementation("androidx.annotation:annotation-experimental:1.3.1")
+    implementation(files(
+        "libs/lib-common-release.aar",
+        "libs/lib-datasource-release.aar",
+        "libs/lib-datasource-okhttp-release.aar",
+        "libs/lib-exoplayer-release.aar",
+        "libs/lib-exoplayer-hls-release.aar",
+        "libs/lib-extractor-release.aar"
+    ))
+    implementation(files("libs/lib-decoder-av1-release.aar", "libs/lib-decoder-mpegh-release.aar"))
+    add("fullImplementation", files("libs/lib-decoder-iamf-release.aar"))
+    if (useLocalFfmpegDecoder) implementation(project(":ffmpeg-decoder-downmix"))
+    else implementation(files("libs/lib-decoder-ffmpeg-release.aar"))
+
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.retrofit)
@@ -341,6 +295,7 @@ dependencies {
     ksp(libs.room.compiler)
     implementation(libs.datastore.preferences)
     implementation(libs.androidx.security.crypto)
+    implementation(platform(libs.supabase.bom))
     implementation(libs.supabase.postgrest)
     implementation(libs.supabase.auth)
     implementation(libs.supabase.realtime)
@@ -363,17 +318,13 @@ dependencies {
     implementation(libs.sentry.okhttp)
     implementation(libs.sentry.timber)
     implementation(libs.timber)
-
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-    baselineProfile(project(":baselineprofile"))
 }
 
 sentry {
     autoUploadProguardMapping.set(sentryMappingUploadEnabled)
     uploadNativeSymbols.set(false)
     includeNativeSources.set(false)
-    autoInstallation {
-        enabled.set(true)
-    }
+    autoInstallation { enabled.set(true) }
 }
