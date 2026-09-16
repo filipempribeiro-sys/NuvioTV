@@ -27,11 +27,13 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  compile:
+  build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: false
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -41,3 +43,13 @@ jobs:
         run: chmod +x gradlew
       - name: Compile MEDIA-HUB full debug
         run: ./gradlew :app:compileFullDebugKotlin --stacktrace
+      - name: Assemble MEDIA-HUB full debug APK
+        run: ./gradlew :app:assembleFullDebug --stacktrace
+      - name: Upload MEDIA-HUB APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: MEDIA-HUB-full-debug-apk
+          path: app/build/outputs/apk/full/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
