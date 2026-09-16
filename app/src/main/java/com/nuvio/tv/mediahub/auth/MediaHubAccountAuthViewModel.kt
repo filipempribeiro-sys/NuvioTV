@@ -3,6 +3,7 @@ package com.nuvio.tv.mediahub.auth
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.nuvio.tv.data.local.AppOnboardingDataStore
 import com.nuvio.tv.domain.model.AuthState
 import com.nuvio.tv.ui.screens.account.AccountUiState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -25,7 +26,8 @@ import javax.inject.Inject
 @HiltViewModel
 class MediaHubAccountAuthViewModel @Inject constructor(
     @ApplicationContext context: Context,
-    private val globalAuthState: MediaHubAuthStateStore
+    private val globalAuthState: MediaHubAuthStateStore,
+    private val appOnboardingDataStore: AppOnboardingDataStore
 ) : ViewModel() {
     private val bridge = MediaHubAccountQrBridge(context.applicationContext)
 
@@ -83,6 +85,14 @@ class MediaHubAccountAuthViewModel @Inject constructor(
         bridge.signOut()
         globalAuthState.signOut()
         _uiState.value = AccountUiState(authState = AuthState.SignedOut)
+
+        // During first-run MEDIA•HUB onboarding, "Continue without account"
+        // deliberately signs out before invoking the host continuation callback.
+        // Persist the guest decision here as well so the onboarding gate cannot
+        // trap the user if the host-side continuation is delayed or interrupted.
+        viewModelScope.launch {
+            appOnboardingDataStore.setHasSeenAuthQrOnFirstLaunch(true)
+        }
     }
 
     fun clearError() {
