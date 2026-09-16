@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Devices
@@ -51,6 +50,7 @@ import androidx.tv.material3.Text
 import androidx.compose.ui.res.stringResource
 import com.nuvio.tv.R
 import com.nuvio.tv.domain.model.AuthState
+import com.nuvio.tv.mediahub.auth.MediaHubAccountAuthViewModel
 
 private const val SHOW_SYNC_CODE_FEATURES = false
 
@@ -60,15 +60,23 @@ fun AccountScreen(
     onNavigateToSyncGenerate: () -> Unit = {},
     onNavigateToSyncClaim: () -> Unit = {},
     onBackPress: () -> Unit = {},
-    viewModel: AccountViewModel = hiltViewModel()
+    viewModel: AccountViewModel = hiltViewModel(),
+    mediaHubAuthViewModel: MediaHubAccountAuthViewModel = hiltViewModel()
 ) {
     BackHandler { onBackPress() }
 
-    val uiState by viewModel.uiState.collectAsState()
+    // MEDIA•HUB is now the account screen's authentication source of truth.
+    // The inherited AccountViewModel remains temporarily for legacy linked-device
+    // and sync responsibilities until those endpoints are migrated.
+    val legacyUiState by viewModel.uiState.collectAsState()
+    val mediaHubAuthState by mediaHubAuthViewModel.authState.collectAsState()
     var showSignOutConfirmation by remember { mutableStateOf(false) }
 
-    LaunchedEffect(uiState.authState) {
-        if (uiState.authState is AuthState.FullAccount) {
+    LaunchedEffect(mediaHubAuthState, legacyUiState.authState) {
+        if (
+            mediaHubAuthState is AuthState.FullAccount &&
+            legacyUiState.authState is AuthState.FullAccount
+        ) {
             viewModel.loadLinkedDevices()
         }
     }
@@ -90,7 +98,7 @@ fun AccountScreen(
             Spacer(modifier = Modifier.height(NuvioTheme.spacing.sm))
         }
 
-        when (val authState = uiState.authState) {
+        when (val authState = mediaHubAuthState) {
             is AuthState.Loading -> {
                 item {
                     Box(
@@ -161,14 +169,16 @@ fun AccountScreen(
                 item {
                     AccountInfoCard(
                         label = stringResource(R.string.account_signed_in_as),
-                        value = authState.email
+                        value = authState.email.ifBlank { authState.userId }
                     )
                 }
-                item {
-                    LinkedDevicesSection(
-                        devices = uiState.linkedDevices,
-                        onUnlink = { viewModel.unlinkDevice(it) }
-                    )
+                if (legacyUiState.authState is AuthState.FullAccount) {
+                    item {
+                        LinkedDevicesSection(
+                            devices = legacyUiState.linkedDevices,
+                            onUnlink = { viewModel.unlinkDevice(it) }
+                        )
+                    }
                 }
                 if (SHOW_SYNC_CODE_FEATURES) {
                     item {
@@ -184,13 +194,16 @@ fun AccountScreen(
                     SignOutButton(onClick = { showSignOutConfirmation = true })
                 }
             }
-
         }
     }
 
     if (showSignOutConfirmation) {
         AccountSignOutConfirmationDialog(
             onConfirm = {
+                // Clear the MEDIA•HUB session first. Also clear the inherited session
+                // while legacy sync is still present so a stale Supabase login cannot
+                // silently keep remote sync alive after the user signs out.
+                mediaHubAuthViewModel.signOut()
                 viewModel.signOut()
                 showSignOutConfirmation = false
             },
