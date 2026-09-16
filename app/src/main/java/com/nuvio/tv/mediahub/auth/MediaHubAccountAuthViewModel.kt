@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import javax.inject.Inject
 
 /**
@@ -86,11 +87,13 @@ class MediaHubAccountAuthViewModel @Inject constructor(
         globalAuthState.signOut()
         _uiState.value = AccountUiState(authState = AuthState.SignedOut)
 
-        // During first-run MEDIA•HUB onboarding, "Continue without account"
-        // deliberately signs out before invoking the host continuation callback.
-        // Persist the guest decision here as well so the onboarding gate cannot
-        // trap the user if the host-side continuation is delayed or interrupted.
-        viewModelScope.launch {
+        // First-run guest continuation calls signOut() immediately before the host
+        // continuation callback. Persist the onboarding decision before returning
+        // so the startup gate can observe it even if the host callback is delayed.
+        // This is a tiny one-time DataStore write; normal authenticated sign-out is
+        // also safe because a user who reached account settings has already seen
+        // the first-launch authentication screen.
+        runBlocking {
             appOnboardingDataStore.setHasSeenAuthQrOnFirstLaunch(true)
         }
     }
