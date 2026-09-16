@@ -1,0 +1,43 @@
+name: MEDIA-HUB Android Check
+
+on:
+  push:
+    branches: [media-hub-platform]
+    paths:
+      - 'app/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - '.github/workflows/media-hub-android-check.yml'
+  pull_request:
+    paths:
+      - 'app/**'
+      - 'build.gradle.kts'
+      - 'settings.gradle.kts'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - '.github/workflows/media-hub-android-check.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: media-hub-android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Make Gradle wrapper executable
+        run: chmod +x gradlew
+      - name: Compile MEDIA-HUB full debug
+        run: ./gradlew :app:compileFullDebugKotlin --stacktrace
