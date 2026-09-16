@@ -30,12 +30,12 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # MEDIA-HUB development APKs must be installable without the private
+      # legacy Nuvio release keystore. The app build already supports this
+      # explicit CI switch; no signing secrets are committed to the repo.
+      CI_USE_DEBUG_SIGNING: 'true'
     steps:
-      # The branch currently contains a legacy libmpv-android gitlink without
-      # matching .gitmodules metadata. A normal checkout succeeds initially but
-      # Git/submodule traversal later makes APK assembly fail. Downloading the
-      # exact commit snapshot is the same safe strategy already used by the
-      # MEDIA-HUB APK workflow and preserves the player source/build inputs.
       - name: Download exact source snapshot without Git/submodule traversal
         shell: bash
         run: |
