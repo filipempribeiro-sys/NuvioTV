@@ -8,7 +8,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -424,14 +423,20 @@ private fun AuthQrCodeBlock(uiState: AccountUiState, remainingMillis: Long) {
         Text(text = formatRemainingTime(remainingMillis), style = MaterialTheme.typography.bodyMedium, color = AuthTextSecondary)
         if (!qrUrl.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(14.dp))
-            Text(
-                text = stringResource(R.string.auth_qr_open_on_phone),
-                modifier = Modifier.clickable {
+            Button(
+                onClick = {
                     runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(qrUrl))) }
                 },
-                style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFF7CFF9B)
-            )
+                colors = ButtonDefaults.colors(
+                    containerColor = AuthSecondaryButtonBackground,
+                    focusedContainerColor = Color.White,
+                    contentColor = Color(0xFF7CFF9B),
+                    focusedContentColor = Color.Black
+                ),
+                shape = ButtonDefaults.shape(RoundedCornerShape(14.dp))
+            ) {
+                Text(stringResource(R.string.auth_qr_open_on_phone))
+            }
         }
         if (!uiState.error.isNullOrBlank()) {
             Spacer(modifier = Modifier.height(12.dp))
