@@ -4,37 +4,44 @@ import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
 import android.os.Build
-import android.os.StrictMode
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
+import coil3.bitmapFactoryMaxParallelism
 import coil3.disk.DiskCache
-import coil3.memory.MemoryCache
-import coil3.gif.GifDecoder
 import coil3.gif.AnimatedImageDecoder
-import coil3.svg.SvgDecoder
-import coil3.request.crossfade
+import coil3.gif.GifDecoder
+import coil3.memory.MemoryCache
 import coil3.request.allowHardware
 import coil3.request.allowRgb565
-import coil3.bitmapFactoryMaxParallelism
-
-import okio.Path.Companion.toOkioPath
+import coil3.request.crossfade
+import coil3.svg.SvgDecoder
 import com.nuvio.tv.core.diagnostics.SentryInitializer
 import com.nuvio.tv.core.image.StaleWhileRevalidateCacheStrategy
+import com.nuvio.tv.core.network.IPv4FirstDns
 import com.nuvio.tv.core.runtime.PluginRuntimeHooks
 import com.nuvio.tv.core.sync.StartupSyncService
 import com.nuvio.tv.core.sync.androidtv.AndroidTvChannelSyncService
-import com.nuvio.tv.core.network.IPv4FirstDns
 import com.nuvio.tv.data.local.ImagePerformancePreferences
 import com.nuvio.tv.data.local.SentrySettingsDataStore
 import com.nuvio.tv.data.simkl.SimklAnimeIdPreferenceHolder
+import com.nuvio.tv.domain.model.AuthState
+import com.nuvio.tv.mediahub.auth.MediaHubAuthStateStore
+import com.nuvio.tv.mediahub.cloud.MediaHubAddonCloudSync
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import okhttp3.Cookie
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
+import okio.Path.Companion.toOkioPath
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import javax.inject.Inject
 
 @HiltAndroidApp
 class NuvioApplication : Application(), SingletonImageLoader.Factory {
@@ -44,6 +51,10 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
     @Inject lateinit var sentrySettingsDataStore: SentrySettingsDataStore
     @Inject lateinit var imagePerformancePreferences: ImagePerformancePreferences
     @Inject lateinit var simklAnimeIdPreferenceHolder: SimklAnimeIdPreferenceHolder
+    @Inject lateinit var mediaHubAuthStateStore: MediaHubAuthStateStore
+    @Inject lateinit var mediaHubAddonCloudSync: MediaHubAddonCloudSync
+
+    private val mediaHubScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     companion object {
         /**
@@ -80,6 +91,23 @@ class NuvioApplication : Application(), SingletonImageLoader.Factory {
         SentryInitializer.start(this, sentrySettingsDataStore)
         PluginRuntimeHooks.onApplicationCreate(this)
         androidTvChannelSyncService.start()
+
+        // MEDIA•HUB source sync belongs to the application lifecycle, not to the
+        // Account screen. This makes an existing account usable immediately on
+        // a cold start and also reacts when QR pairing approves a new session.
+        mediaHubAuthStateStore.refresh()
+        mediaHubScope.launch {
+            mediaHubAuthStateStore.authState
+                .map { it is AuthState.FullAccount }
+                .distinctUntilChanged()
+                .collect { authenticated ->
+                    if (authenticated) {
+                        // Network/cloud failure is non-fatal: local sources stay intact.
+                        mediaHubAddonCloudSync.pullIntoLocal()
+                    }
+                }
+        }
+
         // Load locale synchronously so it's available before Activity.attachBaseContext.
         // SharedPreferences reads are fast (cached in memory after first access).
         val tag = getSharedPreferences("app_locale", Context.MODE_PRIVATE)
