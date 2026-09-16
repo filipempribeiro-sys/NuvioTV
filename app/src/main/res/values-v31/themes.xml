@@ -2,13 +2,12 @@
 <resources>
 
     <!--
-        Android 12+ splash screen using platform attributes directly.
-        This keeps MEDIA•HUB independent from androidx.core:core-splashscreen
-        while preserving the existing launcher artwork and post-splash theme.
+        Android 12+ uses the platform splash window attributes directly.
+        The launcher theme already inherits Theme.MyApplication, so no
+        AndroidX postSplashScreenTheme attribute is required.
     -->
     <style name="Theme.MyApplication.Launcher" parent="Theme.MyApplication">
         <item name="android:windowSplashScreenBackground">@color/splash_background</item>
         <item name="android:windowSplashScreenAnimatedIcon">@drawable/app_logo_mark</item>
-        <item name="android:postSplashScreenTheme">@style/Theme.MyApplication</item>
     </style>
 </resources>
