@@ -55,13 +55,13 @@ jobs:
           path = Path('app/build.gradle.kts')
           text = path.read_text()
           old = '''        debug {
-            signingConfig = signingConfigs.getByName("release")'''
+              signingConfig = signingConfigs.getByName("release")'''
           new = '''        debug {
-            signingConfig = if (useDebugReleaseSigning) {
-                signingConfigs.getByName("debug")
-            } else {
-                signingConfigs.getByName("release")
-            }'''
+              signingConfig = if (useDebugReleaseSigning) {
+                  signingConfigs.getByName("debug")
+              } else {
+                  signingConfigs.getByName("release")
+              }'''
           if old not in text:
               raise SystemExit('Expected debug signing block not found; refusing an unsafe CI patch.')
           path.write_text(text.replace(old, new, 1))
