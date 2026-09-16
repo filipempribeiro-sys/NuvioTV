@@ -31,20 +31,35 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: false
+      # The branch currently contains a legacy libmpv-android gitlink without
+      # matching .gitmodules metadata. A normal checkout succeeds initially but
+      # Git/submodule traversal later makes APK assembly fail. Downloading the
+      # exact commit snapshot is the same safe strategy already used by the
+      # MEDIA-HUB APK workflow and preserves the player source/build inputs.
+      - name: Download exact source snapshot without Git/submodule traversal
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 \
+            "https://github.com/${GITHUB_REPOSITORY}/archive/${GITHUB_SHA}.tar.gz" \
+            -o "$RUNNER_TEMP/media-hub-source.tar.gz"
+          tar -xzf "$RUNNER_TEMP/media-hub-source.tar.gz" --strip-components=1 -C "$GITHUB_WORKSPACE"
+          test -f "$GITHUB_WORKSPACE/gradlew"
+          chmod +x "$GITHUB_WORKSPACE/gradlew"
+          echo 'MEDIA-HUB exact commit snapshot extracted without Git/submodule traversal.'
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
-      - name: Make Gradle wrapper executable
-        run: chmod +x gradlew
+
       - name: Compile MEDIA-HUB full debug
         run: ./gradlew :app:compileFullDebugKotlin --stacktrace
+
       - name: Assemble MEDIA-HUB full debug APK
         run: ./gradlew :app:assembleFullDebug --stacktrace
+
       - name: Upload MEDIA-HUB APK
         if: success()
         uses: actions/upload-artifact@v4
